@@ -1,398 +1,101 @@
-// Minishop demo (static) — no backend, no real payments.
+// PlutoSo (demo) — static, no backend. Data in localStorage.
 
-const currency = new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', maximumFractionDigits: 0 });
-
-const CATEGORIES = [
-  { id: 'all', name: 'Tất cả' },
-  { id: 'electronics', name: 'Điện tử' },
-  { id: 'home', name: 'Nhà cửa' },
-  { id: 'fashion', name: 'Thời trang' },
-  { id: 'beauty', name: 'Làm đẹp' },
-  { id: 'sports', name: 'Thể thao' },
-];
-
-const PRODUCTS = [
-  mkProduct('p01', 'Tai nghe Bluetooth', 'electronics', 249000, 4.7, '🎧', 'Tai nghe pin trâu, độ trễ thấp. Demo thôi nhưng cảm giác “xịn”.'),
-  mkProduct('p02', 'Chuột không dây', 'electronics', 159000, 4.5, '🖱️', 'Click êm, phù hợp học tập và làm việc.'),
-  mkProduct('p03', 'Đèn ngủ LED', 'home', 129000, 4.6, '💡', 'Ánh sáng dịu, nhiều chế độ. Tặng kèm “vibe”.'),
-  mkProduct('p04', 'Bình giữ nhiệt', 'home', 199000, 4.4, '🧊', 'Giữ nóng/lạnh ổn. Đặt tên bình là “hạnh phúc”.'),
-  mkProduct('p05', 'Áo thun basic', 'fashion', 99000, 4.3, '👕', 'Form dễ mặc, màu dễ phối. “Shopee vibe” nhẹ.'),
-  mkProduct('p06', 'Sneaker trắng', 'fashion', 399000, 4.8, '👟', 'Trắng tinh, đi đâu cũng hợp. (Demo, đừng hỏi size)'),
-  mkProduct('p07', 'Sữa rửa mặt', 'beauty', 179000, 4.5, '🧴', 'Làm sạch dịu nhẹ. Không thay thế tư vấn da liễu.'),
-  mkProduct('p08', 'Son tint', 'beauty', 219000, 4.6, '💄', 'Màu lên chuẩn, bền. Demo không thử lên môi.'),
-  mkProduct('p09', 'Dây kháng lực', 'sports', 89000, 4.4, '🏋️', 'Tập tại nhà nhanh gọn.'),
-  mkProduct('p10', 'Bình nước thể thao', 'sports', 69000, 4.2, '🚰', 'Nhẹ, tiện mang theo.'),
-  mkProduct('p11', 'Bàn phím cơ mini', 'electronics', 549000, 4.7, '⌨️', 'Gõ “cạch cạch” đã tai. (Demo, không chọn switch)'),
-  mkProduct('p12', 'Gối tựa lưng', 'home', 149000, 4.1, '🛋️', 'Ngồi lâu đỡ mỏi. Lưu ý tư thế.'),
-];
-
-function mkProduct(id, name, category, price, rating, emoji, desc) {
-  return {
-    id,
-    name,
-    category,
-    price,
-    rating,
-    sold: randInt(120, 9800),
-    emoji,
-    desc,
-    shop: pick(['Minishop Mall', 'Deal Ngon 24h', 'Shop Chính Hãng (demo)', 'Góc Tiện Nghi', 'Đồ Xinh Xắn']),
-  };
-}
-
-function randInt(a, b) {
-  return Math.floor(Math.random() * (b - a + 1)) + a;
-}
-function pick(arr) {
-  return arr[Math.floor(Math.random() * arr.length)];
-}
-
-const state = {
-  q: '',
-  category: 'all',
-  sort: 'popular',
-  minPrice: null,
-  maxPrice: null,
+const LS = {
+  session: 'plutoso.session.v1',
+  db: 'plutoso.db.v1',
 };
 
-const els = {
-  categories: document.getElementById('categories'),
-  chips: document.getElementById('chips'),
-  grid: document.getElementById('grid'),
-  resultsMeta: document.getElementById('resultsMeta'),
-  q: document.getElementById('q'),
-  searchForm: document.getElementById('searchForm'),
-  categorySelect: document.getElementById('categorySelect'),
-  sortSelect: document.getElementById('sortSelect'),
-  minPrice: document.getElementById('minPrice'),
-  maxPrice: document.getElementById('maxPrice'),
-  applyFilters: document.getElementById('applyFilters'),
-  resetFilters: document.getElementById('resetFilters'),
-  productDialog: document.getElementById('productDialog'),
-  productView: document.getElementById('productView'),
-  cartBtn: document.getElementById('cartBtn'),
-  cartDialog: document.getElementById('cartDialog'),
-  cartItems: document.getElementById('cartItems'),
-  cartSubtotal: document.getElementById('cartSubtotal'),
-  cartTotal: document.getElementById('cartTotal'),
-  cartCount: document.getElementById('cartCount'),
-  checkoutBtn: document.getElementById('checkoutBtn'),
-  checkoutDialog: document.getElementById('checkoutDialog'),
-  checkoutForm: document.getElementById('checkoutForm'),
-  toast: document.getElementById('toast'),
-};
+const USERS = [
+  { id: 'u1', name: 'Trung', avatar: '🪐', bio: 'Sếp tổng PlutoSo (demo).' },
+  { id: 'u2', name: 'Quy', avatar: '🚀', bio: 'Thích làm sản phẩm nhanh & gọn.' },
+  { id: 'u3', name: 'Linh', avatar: '🧠', bio: 'Hay soi edge-case.' },
+  { id: 'u4', name: 'An', avatar: '🎨', bio: 'UI/UX là đam mê.' },
+];
 
-const CART_KEY = 'minishop.cart.v1';
-
-function loadCart() {
-  try {
-    const v = JSON.parse(localStorage.getItem(CART_KEY) || '[]');
-    if (Array.isArray(v)) return v;
-  } catch {}
-  return [];
-}
-function saveCart(cart) {
-  localStorage.setItem(CART_KEY, JSON.stringify(cart));
-}
-function cartCount(cart) {
-  return cart.reduce((s, it) => s + it.qty, 0);
-}
-
-function addToCart(productId, qty = 1) {
-  const cart = loadCart();
-  const hit = cart.find(it => it.id === productId);
-  if (hit) hit.qty += qty;
-  else cart.push({ id: productId, qty });
-  saveCart(cart);
-  syncCartBadge();
-  toast('Đã thêm vào giỏ hàng');
-}
-
-function setQty(productId, qty) {
-  const cart = loadCart();
-  const hit = cart.find(it => it.id === productId);
-  if (!hit) return;
-  hit.qty = Math.max(1, qty);
-  saveCart(cart);
-  renderCart();
-  syncCartBadge();
-}
-
-function removeItem(productId) {
-  const cart = loadCart().filter(it => it.id !== productId);
-  saveCart(cart);
-  renderCart();
-  syncCartBadge();
-}
-
-function subtotal(cart) {
-  return cart.reduce((s, it) => {
-    const p = PRODUCTS.find(x => x.id === it.id);
-    return s + (p ? p.price * it.qty : 0);
-  }, 0);
-}
-
-function syncCartBadge() {
-  els.cartCount.textContent = String(cartCount(loadCart()));
-}
-
-function setCategory(catId) {
-  state.category = catId;
-  state.q = els.q.value.trim();
-  updateCategoryUI();
-  render();
-}
-
-function updateCategoryUI() {
-  [...els.categories.querySelectorAll('.chip')].forEach(btn => {
-    btn.classList.toggle('chip--active', btn.dataset.cat === state.category);
-  });
-  els.categorySelect.value = state.category;
-}
-
-function setupCategories() {
-  // chips top
-  els.categories.innerHTML = '';
-  els.chips.innerHTML = '';
-
-  for (const c of CATEGORIES) {
-    const b = document.createElement('button');
-    b.className = 'chip';
-    b.type = 'button';
-    b.textContent = c.name;
-    b.dataset.cat = c.id;
-    b.addEventListener('click', () => setCategory(c.id));
-    els.categories.appendChild(b);
-
-    const b2 = document.createElement('button');
-    b2.className = 'chip';
-    b2.type = 'button';
-    b2.textContent = c.name;
-    b2.dataset.cat = c.id;
-    b2.addEventListener('click', () => setCategory(c.id));
-    els.chips.appendChild(b2);
-  }
-
-  // select
-  els.categorySelect.innerHTML = '';
-  for (const c of CATEGORIES) {
-    const opt = document.createElement('option');
-    opt.value = c.id;
-    opt.textContent = c.name;
-    els.categorySelect.appendChild(opt);
-  }
-}
-
-function applyFilters() {
-  state.q = els.q.value.trim();
-  state.category = els.categorySelect.value;
-  state.sort = els.sortSelect.value;
-
-  const min = els.minPrice.value.trim();
-  const max = els.maxPrice.value.trim();
-  state.minPrice = min ? Number(min) : null;
-  state.maxPrice = max ? Number(max) : null;
-
-  updateCategoryUI();
-  render();
-}
-
-function resetFilters() {
-  state.q = '';
-  state.category = 'all';
-  state.sort = 'popular';
-  state.minPrice = null;
-  state.maxPrice = null;
-  els.q.value = '';
-  els.minPrice.value = '';
-  els.maxPrice.value = '';
-  els.sortSelect.value = 'popular';
-  els.categorySelect.value = 'all';
-  updateCategoryUI();
-  render();
-}
-
-function matches(p) {
-  if (state.category !== 'all' && p.category !== state.category) return false;
-  if (state.q) {
-    const t = (p.name + ' ' + p.shop).toLowerCase();
-    if (!t.includes(state.q.toLowerCase())) return false;
-  }
-  if (state.minPrice != null && p.price < state.minPrice) return false;
-  if (state.maxPrice != null && p.price > state.maxPrice) return false;
-  return true;
-}
-
-function sortProducts(list) {
-  const out = [...list];
-  switch (state.sort) {
-    case 'priceAsc': out.sort((a,b)=>a.price-b.price); break;
-    case 'priceDesc': out.sort((a,b)=>b.price-a.price); break;
-    case 'ratingDesc': out.sort((a,b)=>b.rating-a.rating); break;
-    default:
-      // "popular": sold desc, rating desc
-      out.sort((a,b)=> (b.sold - a.sold) || (b.rating - a.rating));
-  }
-  return out;
-}
-
-function render() {
-  const filtered = PRODUCTS.filter(matches);
-  const sorted = sortProducts(filtered);
-
-  els.resultsMeta.textContent = `Kết quả: ${sorted.length} sản phẩm` + (state.q ? ` · Từ khóa: "${state.q}"` : '');
-  els.grid.innerHTML = '';
-
-  for (const p of sorted) {
-    const card = document.createElement('article');
-    card.className = 'card';
-
-    const img = document.createElement('div');
-    img.className = 'card__img';
-    img.textContent = p.emoji;
-
-    const body = document.createElement('div');
-    body.className = 'card__body';
-
-    const title = document.createElement('div');
-    title.className = 'card__title';
-    title.textContent = p.name;
-
-    const meta = document.createElement('div');
-    meta.className = 'card__meta';
-    meta.innerHTML = `<span>⭐ ${p.rating.toFixed(1)} · Đã bán ${formatSold(p.sold)}</span><span class="badge">${categoryName(p.category)}</span>`;
-
-    const price = document.createElement('div');
-    price.className = 'price';
-    price.textContent = currency.format(p.price);
-
-    const actions = document.createElement('div');
-    actions.className = 'card__actions';
-
-    const viewBtn = document.createElement('button');
-    viewBtn.className = 'btn btn--ghost';
-    viewBtn.type = 'button';
-    viewBtn.textContent = 'Xem';
-    viewBtn.addEventListener('click', () => openProduct(p.id));
-
-    const addBtn = document.createElement('button');
-    addBtn.className = 'btn btn--primary';
-    addBtn.type = 'button';
-    addBtn.textContent = 'Thêm';
-    addBtn.addEventListener('click', () => addToCart(p.id, 1));
-
-    actions.appendChild(viewBtn);
-    actions.appendChild(addBtn);
-
-    body.appendChild(title);
-    body.appendChild(meta);
-    body.appendChild(price);
-    body.appendChild(actions);
-
-    card.appendChild(img);
-    card.appendChild(body);
-
-    els.grid.appendChild(card);
-  }
-}
-
-function formatSold(n) {
-  if (n >= 1000) return `${(n/1000).toFixed(1)}k`;
-  return String(n);
-}
-
-function categoryName(id) {
-  return CATEGORIES.find(c => c.id === id)?.name || id;
-}
-
-function openProduct(id) {
-  const p = PRODUCTS.find(x => x.id === id);
-  if (!p) return;
-
-  els.productView.innerHTML = `
-    <div class="productView__img" aria-hidden="true">${p.emoji}</div>
-    <div>
-      <h2 class="productView__title">${escapeHtml(p.name)}</h2>
-      <div class="productView__row">
-        <span class="rating">⭐ ${p.rating.toFixed(1)}</span>
-        <span class="badge">${escapeHtml(p.shop)}</span>
-        <span class="badge">Đã bán ${formatSold(p.sold)}</span>
-      </div>
-      <p class="productView__desc">${escapeHtml(p.desc)}</p>
-      <div class="productView__row">
-        <div class="price" style="font-size:22px">${currency.format(p.price)}</div>
-        <button class="btn btn--primary" type="button" id="addFromDetail">Thêm vào giỏ</button>
-        <button class="btn" type="button" id="buyNow">Mua ngay</button>
-      </div>
-      <p class="muted">Demo: “Mua ngay” sẽ thêm 1 sản phẩm rồi mở giỏ hàng.</p>
-    </div>
-  `;
-
-  els.productDialog.showModal();
-
-  els.productView.querySelector('#addFromDetail').addEventListener('click', () => addToCart(p.id, 1));
-  els.productView.querySelector('#buyNow').addEventListener('click', () => {
-    addToCart(p.id, 1);
-    els.productDialog.close();
-    openCart();
-  });
-}
-
-function openCart() {
-  renderCart();
-  els.cartDialog.showModal();
-}
-
-function renderCart() {
-  const cart = loadCart();
-  els.cartItems.innerHTML = '';
-
-  if (!cart.length) {
-    els.cartItems.innerHTML = `<p class="muted">Giỏ hàng đang trống. Thêm vài món thử nhé.</p>`;
-  } else {
-    for (const it of cart) {
-      const p = PRODUCTS.find(x => x.id === it.id);
-      if (!p) continue;
-
-      const row = document.createElement('div');
-      row.className = 'cartItem';
-      row.innerHTML = `
-        <div class="cartItem__img" aria-hidden="true">${p.emoji}</div>
-        <div class="cartItem__info">
-          <div class="cartItem__name">${escapeHtml(p.name)}</div>
-          <div class="cartItem__sub">${currency.format(p.price)} · ${escapeHtml(p.shop)}</div>
-        </div>
-        <div class="qty" aria-label="Số lượng">
-          <button type="button" data-act="dec">−</button>
-          <span>${it.qty}</span>
-          <button type="button" data-act="inc">+</button>
-        </div>
-        <button class="btn btn--ghost" type="button" data-act="remove">Xóa</button>
-      `;
-
-      row.querySelector('[data-act="dec"]').addEventListener('click', () => setQty(p.id, it.qty - 1));
-      row.querySelector('[data-act="inc"]').addEventListener('click', () => setQty(p.id, it.qty + 1));
-      row.querySelector('[data-act="remove"]').addEventListener('click', () => removeItem(p.id));
-
-      els.cartItems.appendChild(row);
-    }
-  }
-
-  const sub = subtotal(cart);
-  els.cartSubtotal.textContent = currency.format(sub);
-  els.cartTotal.textContent = currency.format(sub);
-
-  els.checkoutBtn.disabled = cart.length === 0;
+function nowTs() { return Date.now(); }
+function fmtTime(ts) {
+  const d = new Date(ts);
+  return d.toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' });
 }
 
 function toast(msg) {
-  els.toast.textContent = msg;
-  els.toast.classList.add('toast--show');
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('toast--show');
   clearTimeout(toast._t);
-  toast._t = setTimeout(() => els.toast.classList.remove('toast--show'), 1400);
+  toast._t = setTimeout(() => el.classList.remove('toast--show'), 1400);
 }
 
-function escapeHtml(s) {
+function loadSession() {
+  try { return JSON.parse(localStorage.getItem(LS.session) || 'null'); } catch { return null; }
+}
+function saveSession(s) {
+  localStorage.setItem(LS.session, JSON.stringify(s));
+}
+
+function defaultDb() {
+  const seedPosts = [
+    mkPost('p1', 'u2', 'Chào mừng đến PlutoSo! Đây là bản demo kiểu mạng xã hội (feed, like, comment).', nowTs() - 1000 * 60 * 60),
+    mkPost('p2', 'u4', 'UI tối + gradient là chân ái. Nhưng nhớ responsive nhé.', nowTs() - 1000 * 60 * 35),
+    mkPost('p3', 'u3', 'Gợi ý: mọi thứ lưu localStorage. Không backend nên đừng “đặt mật khẩu” thật nha.', nowTs() - 1000 * 60 * 10),
+  ];
+
+  return {
+    posts: seedPosts,
+    likes: {},     // postId -> Set(userId) serialized as array
+    comments: {},  // postId -> [{id, userId, text, ts}]
+    friends: {
+      u1: ['u2','u3','u4'],
+      u2: ['u1','u3'],
+      u3: ['u1','u2'],
+      u4: ['u1'],
+    },
+    messages: {
+      // threadId: [{from,to,text,ts}]
+      'u1-u2': [{ from:'u2', to:'u1', text:'Boss ơi, hôm nay deploy chưa?', ts: nowTs() - 1000*60*25 }],
+      'u1-u4': [{ from:'u4', to:'u1', text:'Em có concept UI mới, xem không?', ts: nowTs() - 1000*60*50 }],
+    }
+  };
+}
+
+function loadDb() {
+  try {
+    const v = JSON.parse(localStorage.getItem(LS.db) || 'null');
+    if (!v || typeof v !== 'object') throw 0;
+    return v;
+  } catch {
+    const db = defaultDb();
+    saveDb(db);
+    return db;
+  }
+}
+function saveDb(db) {
+  localStorage.setItem(LS.db, JSON.stringify(db));
+}
+
+function mkPost(id, userId, text, ts) {
+  return { id, userId, text, ts };
+}
+
+function uid(prefix='id') {
+  return prefix + '_' + Math.random().toString(16).slice(2) + '_' + Date.now().toString(16);
+}
+
+function userById(id) {
+  return USERS.find(u => u.id === id) || null;
+}
+
+function route() {
+  const h = (location.hash || '#feed').replace('#','');
+  const [name, arg] = h.split(':');
+  return { name, arg };
+}
+
+function setRoute(name, arg='') {
+  location.hash = arg ? `#${name}:${arg}` : `#${name}`;
+}
+
+function esc(s) {
   return String(s)
     .replaceAll('&', '&amp;')
     .replaceAll('<', '&lt;')
@@ -401,39 +104,527 @@ function escapeHtml(s) {
     .replaceAll("'", '&#39;');
 }
 
-// Events
-els.searchForm.addEventListener('submit', (e) => {
-  e.preventDefault();
-  applyFilters();
-});
+function mount(html) {
+  document.getElementById('app').innerHTML = html;
+}
 
-els.categorySelect.addEventListener('change', applyFilters);
-els.sortSelect.addEventListener('change', applyFilters);
-els.applyFilters.addEventListener('click', applyFilters);
-els.resetFilters.addEventListener('click', resetFilters);
+function render() {
+  const session = loadSession();
+  if (!session || !session.userId) {
+    renderLogin();
+    return;
+  }
 
-els.cartBtn.addEventListener('click', openCart);
+  const me = userById(session.userId);
+  const { name, arg } = route();
 
-els.checkoutBtn.addEventListener('click', () => {
-  // close cart and open checkout
-  els.cartDialog.close();
-  els.checkoutDialog.showModal();
-});
+  renderShell(me, name);
 
-els.checkoutForm.addEventListener('submit', (e) => {
-  const action = (e.submitter && e.submitter.value) || '';
-  if (action !== 'confirm') return; // cancel
+  if (name === 'profile') {
+    renderProfile(me, arg || me.id);
+  } else if (name === 'friends') {
+    renderFriends(me);
+  } else if (name === 'messages') {
+    renderMessages(me);
+  } else {
+    renderFeed(me);
+  }
+}
 
-  const cart = loadCart();
-  if (!cart.length) return;
+function renderLogin() {
+  mount(`
+    <div class="login">
+      <div class="card loginCard">
+        <div class="card__hd">
+          <a class="brand" href="#">PlutoSo</a>
+          <span class="muted">Demo mạng xã hội (static)</span>
+        </div>
+        <div class="card__bd">
+          <h2 style="margin:0">Chọn tài khoản để đăng nhập</h2>
+          <p class="muted" style="margin:8px 0 0">Không có mật khẩu. Dữ liệu lưu localStorage.</p>
+          <div class="userGrid">
+            ${USERS.map(u => `
+              <button class="userBtn" type="button" data-user="${u.id}">
+                <span class="avatar avatar--lg">${u.avatar}</span>
+                <span>
+                  <div style="font-weight:900">${esc(u.name)}</div>
+                  <div class="muted" style="font-size:12px;line-height:1.3">${esc(u.bio)}</div>
+                </span>
+              </button>
+            `).join('')}
+          </div>
+          <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px">
+            <button id="resetDb" class="pill btn" type="button">Reset dữ liệu</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `);
 
-  const orderId = 'MS' + Date.now().toString().slice(-8);
-  saveCart([]);
-  syncCartBadge();
-  toast(`Đặt hàng thành công (demo) · Mã đơn: ${orderId}`);
-});
+  document.querySelectorAll('[data-user]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      saveSession({ userId: btn.dataset.user });
+      toast('Đăng nhập thành công');
+      setRoute('feed');
+      render();
+    });
+  });
 
-// Init
-setupCategories();
-resetFilters();
-syncCartBadge();
+  document.getElementById('resetDb').addEventListener('click', () => {
+    localStorage.removeItem(LS.db);
+    toast('Đã reset dữ liệu');
+  });
+}
+
+function renderShell(me, active) {
+  const leftNav = `
+    <div class="card left">
+      <div class="card__hd">
+        <div style="display:flex;gap:10px;align-items:center">
+          <span class="avatar">${me.avatar}</span>
+          <div>
+            <div style="font-weight:900">${esc(me.name)}</div>
+            <div class="muted" style="font-size:12px">${esc(me.bio)}</div>
+          </div>
+        </div>
+        <button id="logout" class="pill btn" type="button">Logout</button>
+      </div>
+      <div class="card__bd">
+        <nav class="nav">
+          <a href="#feed" class="${active==='feed'?'active':''}">
+            <span>📰 Bảng tin</span><span class="muted">#feed</span>
+          </a>
+          <a href="#profile" class="${active==='profile'?'active':''}">
+            <span>🙍 Hồ sơ</span><span class="muted">#profile</span>
+          </a>
+          <a href="#friends" class="${active==='friends'?'active':''}">
+            <span>👥 Bạn bè</span><span class="muted">#friends</span>
+          </a>
+          <a href="#messages" class="${active==='messages'?'active':''}">
+            <span>💬 Tin nhắn</span><span class="muted">#messages</span>
+          </a>
+        </nav>
+      </div>
+    </div>
+  `;
+
+  const right = `
+    <div class="card right">
+      <div class="card__hd">
+        <span style="font-weight:900">Gợi ý</span>
+        <span class="muted">demo</span>
+      </div>
+      <div class="card__bd">
+        <div class="rightList" id="rightList"></div>
+      </div>
+    </div>
+  `;
+
+  mount(`
+    <header class="topbar">
+      <div class="container topbar__row">
+        <a class="brand" href="#feed">PlutoSo</a>
+        <div class="search">
+          <input id="search" placeholder="Tìm người / bài viết (demo)..." />
+        </div>
+        <a class="pill btn btn--primary" href="#profile:${me.id}">
+          <span class="avatar">${me.avatar}</span>
+          <span>${esc(me.name)}</span>
+        </a>
+      </div>
+    </header>
+
+    <main class="container">
+      <section class="layout">
+        ${leftNav}
+        <div id="main"></div>
+        ${right}
+      </section>
+    </main>
+  `);
+
+  document.getElementById('logout').addEventListener('click', () => {
+    localStorage.removeItem(LS.session);
+    toast('Đã logout');
+    render();
+  });
+
+  // right list suggestions
+  const rightList = document.getElementById('rightList');
+  if (rightList) {
+    const others = USERS.filter(u => u.id !== me.id).slice(0, 4);
+    rightList.innerHTML = others.map(u => `
+      <div class="person" data-go="${u.id}">
+        <span class="avatar">${u.avatar}</span>
+        <span>
+          <div class="person__name">${esc(u.name)}</div>
+          <div class="person__sub">Xem profile</div>
+        </span>
+      </div>
+    `).join('');
+    rightList.querySelectorAll('[data-go]').forEach(el => {
+      el.addEventListener('click', () => setRoute('profile', el.dataset.go));
+    });
+  }
+
+  // search (very simple)
+  const search = document.getElementById('search');
+  search.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    const q = search.value.trim().toLowerCase();
+    if (!q) return;
+    const u = USERS.find(x => x.name.toLowerCase().includes(q));
+    if (u) {
+      setRoute('profile', u.id);
+      return;
+    }
+    toast('Demo: search chỉ tìm user theo tên');
+  });
+
+  // highlight nav for profile root
+  const navProfile = document.querySelector('.nav a[href="#profile"]');
+  if (active === 'profile' && location.hash.includes(':')) {
+    navProfile.classList.add('active');
+  }
+}
+
+function renderFeed(me) {
+  const db = loadDb();
+  const main = document.getElementById('main');
+
+  main.innerHTML = `
+    <div class="card">
+      <div class="card__hd">
+        <span style="font-weight:900">Bảng tin</span>
+        <span class="muted">PlutoSo feed (demo)</span>
+      </div>
+      <div class="card__bd composer">
+        <textarea id="postText" placeholder="Bạn đang nghĩ gì?"></textarea>
+        <div class="composer__row">
+          <span class="muted">Tip: data lưu localStorage</span>
+          <button id="postBtn" class="pill btn btn--primary" type="button">Đăng</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="feed" id="feed"></div>
+  `;
+
+  document.getElementById('postBtn').addEventListener('click', () => {
+    const t = document.getElementById('postText').value.trim();
+    if (!t) return toast('Nhập nội dung trước');
+    const post = mkPost(uid('p'), me.id, t, nowTs());
+    db.posts.unshift(post);
+    saveDb(db);
+    document.getElementById('postText').value = '';
+    toast('Đã đăng');
+    drawFeed(me);
+  });
+
+  drawFeed(me);
+}
+
+function getLikes(db, postId) {
+  const arr = db.likes[postId] || [];
+  return new Set(arr);
+}
+function setLikes(db, postId, set) {
+  db.likes[postId] = [...set];
+}
+
+function drawFeed(me) {
+  const db = loadDb();
+  const feed = document.getElementById('feed');
+  const posts = db.posts.slice(0, 50);
+
+  feed.innerHTML = posts.map(p => renderPostHtml(me, db, p)).join('');
+
+  feed.querySelectorAll('[data-like]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.like;
+      const likes = getLikes(db, id);
+      if (likes.has(me.id)) likes.delete(me.id);
+      else likes.add(me.id);
+      setLikes(db, id, likes);
+      saveDb(db);
+      drawFeed(me);
+    });
+  });
+
+  feed.querySelectorAll('[data-open]').forEach(el => {
+    el.addEventListener('click', () => setRoute('profile', el.dataset.open));
+  });
+
+  feed.querySelectorAll('[data-add-comment]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const postId = btn.dataset.addComment;
+      const input = feed.querySelector(`[data-comment-input="${postId}"]`);
+      const text = input.value.trim();
+      if (!text) return;
+      db.comments[postId] = db.comments[postId] || [];
+      db.comments[postId].push({ id: uid('c'), userId: me.id, text, ts: nowTs() });
+      saveDb(db);
+      drawFeed(me);
+    });
+  });
+}
+
+function renderPostHtml(me, db, p) {
+  const u = userById(p.userId);
+  const likes = getLikes(db, p.id);
+  const comments = (db.comments[p.id] || []);
+  const liked = likes.has(me.id);
+
+  return `
+    <article class="card post">
+      <div class="post__top">
+        <span class="avatar">${u?.avatar || '🙂'}</span>
+        <div style="flex:1">
+          <div class="post__name"><a href="javascript:void(0)" data-open="${p.userId}">${esc(u?.name || 'Unknown')}</a></div>
+          <div class="post__time">${fmtTime(p.ts)}</div>
+        </div>
+        <span class="tag">${liked ? 'Đã like' : 'Bài viết'}</span>
+      </div>
+      <p class="post__text">${esc(p.text)}</p>
+
+      <div class="post__actions">
+        <button class="pill btn ${liked ? 'btn--primary' : ''}" type="button" data-like="${p.id}">👍 Like (${likes.size})</button>
+        <span class="pill">💬 Comment (${comments.length})</span>
+        <span class="pill">🔁 Share (demo)</span>
+      </div>
+
+      <div class="comments">
+        ${comments.slice(-3).map(c => {
+          const cu = userById(c.userId);
+          return `
+            <div class="comment">
+              <span class="avatar">${cu?.avatar || '🙂'}</span>
+              <div class="comment__bubble">
+                <div><strong>${esc(cu?.name || 'Unknown')}</strong> ${esc(c.text)}</div>
+                <div class="comment__meta">${fmtTime(c.ts)}</div>
+              </div>
+            </div>
+          `;
+        }).join('')}
+
+        <div class="inputRow">
+          <input data-comment-input="${p.id}" placeholder="Viết bình luận..." />
+          <button class="pill btn" type="button" data-add-comment="${p.id}">Gửi</button>
+        </div>
+      </div>
+    </article>
+  `;
+}
+
+function renderProfile(me, userId) {
+  const db = loadDb();
+  const u = userById(userId);
+  const main = document.getElementById('main');
+
+  if (!u) {
+    main.innerHTML = `<div class="card"><div class="card__bd">Không tìm thấy user.</div></div>`;
+    return;
+  }
+
+  const my = u.id === me.id;
+  const friends = (db.friends[u.id] || []).map(userById).filter(Boolean);
+  const posts = db.posts.filter(p => p.userId === u.id);
+
+  main.innerHTML = `
+    <div class="card">
+      <div class="card__hd">
+        <div style="display:flex;gap:12px;align-items:center">
+          <span class="avatar avatar--lg">${u.avatar}</span>
+          <div>
+            <div style="font-weight:900;font-size:18px">${esc(u.name)}</div>
+            <div class="muted">${esc(u.bio)}</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          ${my ? `<span class="pill">Đây là bạn</span>` : `<button id="msgBtn" class="pill btn btn--primary" type="button">Nhắn tin</button>`}
+        </div>
+      </div>
+      <div class="card__bd">
+        <div style="display:flex;gap:12px;flex-wrap:wrap">
+          <span class="pill">👥 Bạn bè: <strong>${friends.length}</strong></span>
+          <span class="pill">📝 Bài viết: <strong>${posts.length}</strong></span>
+          <span class="pill">📌 Trạng thái: demo</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:12px">
+      <div class="card__hd"><span style="font-weight:900">Bài viết</span><span class="muted">của ${esc(u.name)}</span></div>
+      <div class="card__bd">
+        <div class="feed" id="profileFeed"></div>
+      </div>
+    </div>
+  `;
+
+  const profileFeed = document.getElementById('profileFeed');
+  profileFeed.innerHTML = posts.length ? posts.map(p => renderPostHtml(me, db, p)).join('') : `<p class="muted">Chưa có bài viết.</p>`;
+
+  // wire interactions (reuse)
+  profileFeed.querySelectorAll('[data-like]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.like;
+      const likes = getLikes(db, id);
+      if (likes.has(me.id)) likes.delete(me.id);
+      else likes.add(me.id);
+      setLikes(db, id, likes);
+      saveDb(db);
+      renderProfile(me, userId);
+    });
+  });
+  profileFeed.querySelectorAll('[data-open]').forEach(el => {
+    el.addEventListener('click', () => setRoute('profile', el.dataset.open));
+  });
+  profileFeed.querySelectorAll('[data-add-comment]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const postId = btn.dataset.addComment;
+      const input = profileFeed.querySelector(`[data-comment-input="${postId}"]`);
+      const text = input.value.trim();
+      if (!text) return;
+      db.comments[postId] = db.comments[postId] || [];
+      db.comments[postId].push({ id: uid('c'), userId: me.id, text, ts: nowTs() });
+      saveDb(db);
+      renderProfile(me, userId);
+    });
+  });
+
+  if (!my) {
+    const msgBtn = document.getElementById('msgBtn');
+    msgBtn.addEventListener('click', () => {
+      setRoute('messages', userId);
+    });
+  }
+}
+
+function threadId(a, b) {
+  return [a,b].sort().join('-');
+}
+
+function renderFriends(me) {
+  const db = loadDb();
+  const main = document.getElementById('main');
+  const ids = db.friends[me.id] || [];
+  const list = ids.map(userById).filter(Boolean);
+
+  main.innerHTML = `
+    <div class="card">
+      <div class="card__hd"><span style="font-weight:900">Bạn bè</span><span class="muted">(${list.length})</span></div>
+      <div class="card__bd">
+        <div class="rightList">
+          ${list.map(u => `
+            <div class="person" data-go="${u.id}">
+              <span class="avatar">${u.avatar}</span>
+              <span>
+                <div class="person__name">${esc(u.name)}</div>
+                <div class="person__sub">Xem hồ sơ</div>
+              </span>
+              <span class="pill">💬</span>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    </div>
+  `;
+
+  main.querySelectorAll('[data-go]').forEach(el => {
+    el.addEventListener('click', () => setRoute('profile', el.dataset.go));
+  });
+}
+
+function renderMessages(me) {
+  const db = loadDb();
+  const { arg } = route();
+  const peerId = arg || (db.friends[me.id] || [])[0] || 'u2';
+  const peer = userById(peerId) || USERS[1];
+  const tId = threadId(me.id, peer.id);
+  db.messages[tId] = db.messages[tId] || [];
+
+  const main = document.getElementById('main');
+  main.innerHTML = `
+    <div class="card">
+      <div class="card__hd">
+        <div style="display:flex;gap:10px;align-items:center">
+          <span class="avatar">${peer.avatar}</span>
+          <div>
+            <div style="font-weight:900">Chat với ${esc(peer.name)}</div>
+            <div class="muted" style="font-size:12px">Mock messenger — không realtime</div>
+          </div>
+        </div>
+        <button class="pill btn" type="button" id="goProfile">Xem hồ sơ</button>
+      </div>
+      <div class="card__bd">
+        <div id="chat" class="rightList" style="gap:8px"></div>
+        <div class="inputRow" style="margin-top:12px">
+          <input id="msg" placeholder="Nhập tin nhắn..." />
+          <button id="send" class="pill btn btn--primary" type="button">Gửi</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:12px">
+      <div class="card__hd"><span style="font-weight:900">Chuyển hội thoại</span><span class="muted">demo</span></div>
+      <div class="card__bd">
+        <div class="rightList">
+          ${USERS.filter(u=>u.id!==me.id).map(u=>`
+            <div class="person" data-peer="${u.id}">
+              <span class="avatar">${u.avatar}</span>
+              <span>
+                <div class="person__name">${esc(u.name)}</div>
+                <div class="person__sub">Mở chat</div>
+              </span>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('goProfile').addEventListener('click', () => setRoute('profile', peer.id));
+
+  main.querySelectorAll('[data-peer]').forEach(el => {
+    el.addEventListener('click', () => setRoute('messages', el.dataset.peer));
+  });
+
+  function draw() {
+    const msgs = db.messages[tId] || [];
+    const chat = document.getElementById('chat');
+    chat.innerHTML = msgs.map(m => {
+      const from = userById(m.from);
+      const mine = m.from === me.id;
+      return `
+        <div class="person" style="justify-content:space-between;gap:12px;${mine ? 'border-color:rgba(108,92,231,.35);background:rgba(108,92,231,.10)' : ''}">
+          <span style="display:flex;gap:10px;align-items:center">
+            <span class="avatar">${from?.avatar || '🙂'}</span>
+            <span>
+              <div class="person__name">${esc(from?.name || 'Unknown')}</div>
+              <div class="person__sub">${esc(m.text)}</div>
+            </span>
+          </span>
+          <span class="muted" style="font-size:12px">${fmtTime(m.ts)}</span>
+        </div>
+      `;
+    }).join('') || `<p class="muted">Chưa có tin nhắn.</p>`;
+  }
+
+  draw();
+
+  document.getElementById('send').addEventListener('click', () => {
+    const input = document.getElementById('msg');
+    const text = input.value.trim();
+    if (!text) return;
+    db.messages[tId].push({ from: me.id, to: peer.id, text, ts: nowTs() });
+    saveDb(db);
+    input.value = '';
+    draw();
+  });
+}
+
+// events
+window.addEventListener('hashchange', render);
+
+// init
+render();

@@ -1,12 +1,18 @@
-# Minishop (demo)
+# PlutoSo (demo)
 
-A static HTML/CSS/JS mini e-commerce demo (Shopee-like marketplace feel).
+A lightweight Facebook-like social network UI demo (static HTML/CSS/JS).
+
+## Features (demo)
+- Mock login (choose a user)
+- Feed: create post, like, comment
+- Profile: basic info + user posts
+- Friends list
+- Messages (mock UI)
+
+Data is stored in `localStorage` (no backend).
 
 ## Run locally
 Open `docs/index.html` in a browser.
 
 ## GitHub Pages
-Recommended settings:
-- Settings → Pages
-- Build and deployment: Deploy from a branch
-- Branch: `main` / folder: `/docs`
+Settings → Pages → Deploy from a branch → Branch: `main` → Folder: `/docs`
