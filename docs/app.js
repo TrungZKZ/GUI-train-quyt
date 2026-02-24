@@ -737,7 +737,7 @@ async function drawFeedFromServer(me) {
     if (anyMedia) {
       const url = signedMap.get(`${anyMedia.bucket}::${anyMedia.path}`);
       if (url) {
-        mediaObj = { kind: anyMedia.media_type, url };
+        mediaObj = { kind: anyMedia.media_type, url, bucket: anyMedia.bucket, path: anyMedia.path };
       }
     }
     return { id: 'srv_' + p.id, userId: p.user_id, text: p.text, ts: new Date(p.created_at).getTime(), media: mediaObj, __display: uName };
@@ -801,6 +801,29 @@ function wireFeedHandlers(me, db) {
 
   feed.querySelectorAll('[data-share]').forEach(btn => {
     btn.addEventListener('click', () => toast('Demo: share sheet'));
+  });
+
+  // If a signed media URL fails (expired or blocked), try re-signing once.
+  feed.querySelectorAll('img[data-media-bucket][data-media-path]').forEach(img => {
+    img.addEventListener('error', async () => {
+      if (img.dataset.retry === '1') return;
+      img.dataset.retry = '1';
+      if (!supabase) return;
+      const bucket = img.dataset.mediaBucket;
+      const path = img.dataset.mediaPath;
+      if (!bucket || !path) return;
+
+      try {
+        const { data, error } = await supabase.functions.invoke('sign-media', {
+          body: { items: [{ bucket, path }], expiresIn: 300 }
+        });
+        if (error) return;
+        const signed = data?.items?.[0]?.signedUrl;
+        if (signed) {
+          img.src = signed;
+        }
+      } catch {}
+    });
   });
 
   feed.querySelectorAll('[data-like]').forEach(btn => {
@@ -896,8 +919,8 @@ function renderPostHtml(me, db, p) {
       ${media ? (
         media.url ? (
           media.kind === 'video'
-            ? `<video class="post__media" src="${media.url}" playsinline muted controls></video>`
-            : `<img class="post__media" src="${media.url}" alt="post media" />`
+            ? `<video class="post__media" src="${media.url}" playsinline muted controls data-media-bucket="${esc(media.bucket || '')}" data-media-path="${esc(media.path || '')}"></video>`
+            : `<img class="post__media" src="${media.url}" alt="post media" loading="lazy" data-media-bucket="${esc(media.bucket || '')}" data-media-path="${esc(media.path || '')}" />`
         )
         : `<div class="post__media" aria-hidden="true"><span class="post__mediaEmoji">${media.emoji}</span></div>`
       ) : ''}
