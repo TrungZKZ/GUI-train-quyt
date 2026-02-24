@@ -42,8 +42,10 @@ Deno.serve(async (req) => {
     return json({ error: "method_not_allowed" }, { status: 405 });
   }
 
-  const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
-  const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  // NOTE: Supabase CLI blocks setting envs that start with SUPABASE_.
+  // Use project-scoped names instead.
+  const SUPABASE_URL = Deno.env.get("PLUTOSO_SUPABASE_URL");
+  const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("PLUTOSO_SERVICE_ROLE_KEY");
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
     return json({ error: "missing_env" }, { status: 500 });
   }
