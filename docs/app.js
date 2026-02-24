@@ -523,32 +523,30 @@ function renderFeed(me) {
         });
         if (upErr) throw upErr;
 
-        const { data: pub } = supabase.storage.from(bucket).getPublicUrl(path);
-        mediaUrl = pub.publicUrl;
         mediaType = pendingFile.type.startsWith('video/') ? 'video' : 'image';
-        mediaMeta = { url: mediaUrl, type: mediaType, name: pendingFile.name };
+        mediaMeta = { bucket, path, type: mediaType, name: pendingFile.name };
       }
 
       // Insert post
+      const authUser = await getAuthUser();
       const { data: ins, error: insErr } = await supabase
         .from('posts')
-        .insert({ user_id: (await getAuthUser()).id, text: t })
-        .select('id, user_id, text, created_at')
+        .insert({ user_id: authUser.id, display_name: me.name, text: t })
+        .select('id, user_id, text, created_at, display_name')
         .single();
       if (insErr) throw insErr;
 
       if (mediaMeta) {
         const { error: mErr } = await supabase
           .from('post_media')
-          .insert({ post_id: ins.id, url: mediaMeta.url, media_type: mediaMeta.type, file_name: mediaMeta.name });
+          .insert({ post_id: ins.id, bucket: mediaMeta.bucket, path: mediaMeta.path, media_type: mediaMeta.type, file_name: mediaMeta.name });
         if (mErr) throw mErr;
       }
 
       document.getElementById('postText').value = '';
       pendingFile = null;
       toast('Đã đăng (server)');
-      // For now, just refresh local feed from server in a later milestone.
-      // In this milestone, keep existing local feed; we will add server feed fetch next.
+      await drawFeedFromServer(me);
     } catch (e) {
       toast('Post/upload lỗi: ' + (e?.message || String(e)));
     }
@@ -567,7 +565,10 @@ function renderFeed(me) {
     `).join('');
   }
 
-  setTimeout(() => drawFeed(me), 180);
+  setTimeout(() => {
+    if (supabase) drawFeedFromServer(me);
+    else drawFeed(me);
+  }, 180);
 }
 
 function renderStories(me) {
@@ -641,12 +642,89 @@ function topReactions(db, postId) {
   return sorted.slice(0, 3).map(([id]) => REACTIONS.find(r=>r.id===id)?.emoji).filter(Boolean);
 }
 
+async function drawFeedFromServer(me) {
+  if (!supabase) return;
+
+  const feed = document.getElementById('feed');
+  if (!feed) return;
+
+  // Fetch latest posts (public)
+  const { data: posts, error: pErr } = await supabase
+    .from('posts')
+    .select('id,user_id,display_name,text,created_at')
+    .order('created_at', { ascending: false })
+    .limit(30);
+
+  if (pErr) {
+    toast('Fetch posts lỗi: ' + pErr.message);
+    return;
+  }
+
+  const postIds = (posts || []).map(p => p.id);
+
+  let media = [];
+  if (postIds.length) {
+    const { data: m, error: mErr } = await supabase
+      .from('post_media')
+      .select('post_id,bucket,path,media_type,file_name')
+      .in('post_id', postIds);
+    if (!mErr) media = m || [];
+  }
+
+  // Sign URLs (public edge function)
+  const items = media.map(m => ({ bucket: m.bucket, path: m.path }));
+  const signedMap = new Map();
+  if (items.length) {
+    const { data, error } = await supabase.functions.invoke('sign-media', {
+      body: { items, expiresIn: 300 }
+    });
+    if (!error && data?.items) {
+      for (const it of data.items) {
+        signedMap.set(`${it.bucket}::${it.path}`, it.signedUrl);
+      }
+    }
+  }
+
+  // Build a local-db-like view for rendering (reuse existing UI)
+  const db = loadDb();
+  const serverPosts = (posts || []).map(p => {
+    const uName = p.display_name || ('User ' + String(p.user_id).slice(0, 6));
+    const anyMedia = media.find(m => m.post_id === p.id);
+    let mediaObj = null;
+    if (anyMedia) {
+      const url = signedMap.get(`${anyMedia.bucket}::${anyMedia.path}`);
+      if (url) {
+        mediaObj = { kind: anyMedia.media_type, url };
+      }
+    }
+    return { id: 'srv_' + p.id, userId: p.user_id, text: p.text, ts: new Date(p.created_at).getTime(), media: mediaObj, __display: uName };
+  });
+
+  // Render
+  feed.innerHTML = serverPosts.map(p => {
+    // patch a tiny user mapping for server users
+    const u = { id: p.userId, name: p.__display, avatar: '🪐' };
+    // create a throwaway rendering db
+    const tempDb = { ...db, posts: [p] };
+    return renderPostHtml(me, tempDb, { ...p, userId: p.userId, ts: p.ts, media: p.media });
+  }).join('');
+
+  wireFeedHandlers(me, db);
+}
+
 function drawFeed(me) {
   const db = loadDb();
   const feed = document.getElementById('feed');
   const posts = db.posts.slice(0, 50);
 
   feed.innerHTML = posts.map(p => renderPostHtml(me, db, p)).join('');
+
+  wireFeedHandlers(me, db);
+}
+
+function wireFeedHandlers(me, db) {
+  const feed = document.getElementById('feed');
+  if (!feed) return;
 
   // Defensive: ensure popovers are hidden by default after re-render.
   feed.querySelectorAll('[data-menu-pop]').forEach(x => x.setAttribute('hidden', ''));
