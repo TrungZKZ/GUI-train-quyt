@@ -1,5 +1,25 @@
 // PlutoSo (demo) — static, no backend. Data in localStorage.
 
+// --- Crash guard (so blank screens become debuggable) ---
+function showFatal(err) {
+  try {
+    const msg = (err && (err.stack || err.message)) ? String(err.stack || err.message) : String(err);
+    const app = document.getElementById('app');
+    if (app) {
+      app.innerHTML = `
+        <div style="padding:16px;max-width:980px;margin:20px auto;color:#eaf0ff">
+          <h2 style="margin:0 0 8px">PlutoSo crashed</h2>
+          <p style="margin:0 0 12px;opacity:.75">Mở DevTools Console để xem chi tiết. Copy đoạn dưới gửi dev.</p>
+          <pre style="white-space:pre-wrap;background:rgba(0,0,0,.35);padding:12px;border-radius:12px;border:1px solid rgba(255,255,255,.12)">${msg}</pre>
+        </div>
+      `;
+    }
+  } catch {}
+}
+
+window.addEventListener('error', (e) => showFatal(e.error || e.message));
+window.addEventListener('unhandledrejection', (e) => showFatal(e.reason));
+
 const LS = {
   session: 'plutoso.session.v1',
   db: 'plutoso.db.v1',
@@ -1314,10 +1334,18 @@ function ensureGlobalUiHandlers() {
   });
 }
 
+async function renderSafe() {
+  try {
+    await render();
+  } catch (e) {
+    showFatal(e);
+  }
+}
+
 // events
-window.addEventListener('hashchange', render);
+window.addEventListener('hashchange', () => { void renderSafe(); });
 
 // init
 ensureGlobalUiHandlers();
 installStoryHandlers();
-render();
+void renderSafe();
