@@ -74,7 +74,7 @@ function saveDb(db) {
 }
 
 function mkPost(id, userId, text, ts) {
-  return { id, userId, text, ts };
+  return { id, userId, text, ts, media: null };
 }
 
 function uid(prefix='id') {
@@ -227,7 +227,15 @@ function renderShell(me, active) {
         <div class="search">
           <input id="search" placeholder="Tìm người / bài viết (demo)..." />
         </div>
-        <a class="pill btn btn--primary" href="#profile:${me.id}">
+
+        <a class="pill btn" href="#feed" title="Home">🏠</a>
+        <a class="pill btn" href="#friends" title="Friends">👥</a>
+        <a class="pill btn" href="#messages" title="Messages">💬</a>
+        <button id="notifBtn" class="pill btn" type="button" title="Notifications">
+          🔔 <span id="notifCount" class="badgeCount">3</span>
+        </button>
+
+        <a class="pill btn btn--primary" href="#profile:${me.id}" title="Profile">
           <span class="avatar">${me.avatar}</span>
           <span>${esc(me.name)}</span>
         </a>
@@ -248,6 +256,14 @@ function renderShell(me, active) {
     toast('Đã logout');
     render();
   });
+
+  // notifications (mock)
+  const notifBtn = document.getElementById('notifBtn');
+  if (notifBtn) {
+    notifBtn.addEventListener('click', () => {
+      toast('Demo: notifications sẽ làm ở phase tiếp theo');
+    });
+  }
 
   // right list suggestions
   const rightList = document.getElementById('rightList');
@@ -293,6 +309,8 @@ function renderFeed(me) {
   const main = document.getElementById('main');
 
   main.innerHTML = `
+    <div class="stories" id="stories" aria-label="Stories"></div>
+
     <div class="card">
       <div class="card__hd">
         <span style="font-weight:900">Bảng tin</span>
@@ -302,7 +320,10 @@ function renderFeed(me) {
         <textarea id="postText" placeholder="Bạn đang nghĩ gì?"></textarea>
         <div class="composer__row">
           <span class="muted">Tip: data lưu localStorage</span>
-          <button id="postBtn" class="pill btn btn--primary" type="button">Đăng</button>
+          <div style="display:flex;gap:10px;align-items:center">
+            <button id="photoBtn" class="pill btn" type="button">📷 Ảnh (demo)</button>
+            <button id="postBtn" class="pill btn btn--primary" type="button">Đăng</button>
+          </div>
         </div>
       </div>
     </div>
@@ -310,18 +331,50 @@ function renderFeed(me) {
     <div class="feed" id="feed"></div>
   `;
 
+  // stories row
+  renderStories(me);
+
+  let attachPhoto = false;
+  document.getElementById('photoBtn').addEventListener('click', () => {
+    attachPhoto = !attachPhoto;
+    toast(attachPhoto ? 'Đã gắn ảnh (demo)' : 'Đã bỏ ảnh');
+  });
+
   document.getElementById('postBtn').addEventListener('click', () => {
     const t = document.getElementById('postText').value.trim();
     if (!t) return toast('Nhập nội dung trước');
     const post = mkPost(uid('p'), me.id, t, nowTs());
+    // phase 1: media placeholder flag
+    if (attachPhoto) post.media = { kind: 'photo', emoji: '🖼️' };
     db.posts.unshift(post);
     saveDb(db);
     document.getElementById('postText').value = '';
+    attachPhoto = false;
     toast('Đã đăng');
     drawFeed(me);
   });
 
   drawFeed(me);
+}
+
+function renderStories(me) {
+  const el = document.getElementById('stories');
+  if (!el) return;
+
+  const people = [me, ...USERS.filter(u => u.id !== me.id)];
+  el.innerHTML = people.map(u => `
+    <button class="story" type="button" data-story="${u.id}">
+      <div class="story__cover"></div>
+      <div class="story__avatar"><span class="avatar">${u.avatar}</span></div>
+      <div class="story__name">${esc(u.name)}</div>
+    </button>
+  `).join('');
+
+  el.querySelectorAll('[data-story]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      toast('Demo: story viewer sẽ làm ở phase sau');
+    });
+  });
 }
 
 function getLikes(db, postId) {
@@ -375,6 +428,8 @@ function renderPostHtml(me, db, p) {
   const comments = (db.comments[p.id] || []);
   const liked = likes.has(me.id);
 
+  const media = p.media || autoMediaForPost(p);
+
   return `
     <article class="card post">
       <div class="post__top">
@@ -386,6 +441,8 @@ function renderPostHtml(me, db, p) {
         <span class="tag">${liked ? 'Đã like' : 'Bài viết'}</span>
       </div>
       <p class="post__text">${esc(p.text)}</p>
+
+      ${media ? `<div class="post__media" aria-hidden="true"><span class="post__mediaEmoji">${media.emoji}</span></div>` : ''}
 
       <div class="post__actions">
         <button class="pill btn ${liked ? 'btn--primary' : ''}" type="button" data-like="${p.id}">👍 Like (${likes.size})</button>
@@ -416,6 +473,14 @@ function renderPostHtml(me, db, p) {
   `;
 }
 
+function autoMediaForPost(p) {
+  // phase 1: sprinkle a few media blocks for "Facebook feel"
+  const last = p.id?.charCodeAt(p.id.length - 1) || 0;
+  if (last % 4 !== 0) return null;
+  const emoji = ['🖼️','🌆','🎉','📸'][last % 4];
+  return { kind: 'photo', emoji };
+}
+
 function renderProfile(me, userId) {
   const db = loadDb();
   const u = userById(userId);
@@ -431,24 +496,21 @@ function renderProfile(me, userId) {
   const posts = db.posts.filter(p => p.userId === u.id);
 
   main.innerHTML = `
-    <div class="card">
-      <div class="card__hd">
-        <div style="display:flex;gap:12px;align-items:center">
-          <span class="avatar avatar--lg">${u.avatar}</span>
-          <div>
-            <div style="font-weight:900;font-size:18px">${esc(u.name)}</div>
-            <div class="muted">${esc(u.bio)}</div>
+    <div class="card profile">
+      <div class="profile__cover"></div>
+      <div class="profile__header">
+        <span class="avatar avatar--xl">${u.avatar}</span>
+        <div class="profile__meta">
+          <div class="profile__name">${esc(u.name)}</div>
+          <div class="muted">${esc(u.bio)}</div>
+          <div class="profile__stats">
+            <span class="pill">👥 Bạn bè: <strong>${friends.length}</strong></span>
+            <span class="pill">📝 Bài viết: <strong>${posts.length}</strong></span>
+            <span class="pill">✅ Xác minh: demo</span>
           </div>
         </div>
-        <div style="display:flex;gap:8px;align-items:center">
+        <div class="profile__actions">
           ${my ? `<span class="pill">Đây là bạn</span>` : `<button id="msgBtn" class="pill btn btn--primary" type="button">Nhắn tin</button>`}
-        </div>
-      </div>
-      <div class="card__bd">
-        <div style="display:flex;gap:12px;flex-wrap:wrap">
-          <span class="pill">👥 Bạn bè: <strong>${friends.length}</strong></span>
-          <span class="pill">📝 Bài viết: <strong>${posts.length}</strong></span>
-          <span class="pill">📌 Trạng thái: demo</span>
         </div>
       </div>
     </div>
