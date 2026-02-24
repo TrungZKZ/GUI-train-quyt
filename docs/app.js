@@ -354,7 +354,20 @@ function renderFeed(me) {
     drawFeed(me);
   });
 
-  drawFeed(me);
+  // Skeleton loading (UI feel)
+  const feed = document.getElementById('feed');
+  if (feed) {
+    feed.innerHTML = Array.from({ length: 4 }).map(() => `
+      <div class="card post skeleton">
+        <div class="skeleton__row"></div>
+        <div class="skeleton__line"></div>
+        <div class="skeleton__line"></div>
+        <div class="skeleton__media"></div>
+      </div>
+    `).join('');
+  }
+
+  setTimeout(() => drawFeed(me), 180);
 }
 
 function renderStories(me) {
@@ -391,6 +404,41 @@ function drawFeed(me) {
   const posts = db.posts.slice(0, 50);
 
   feed.innerHTML = posts.map(p => renderPostHtml(me, db, p)).join('');
+
+  // post menus
+  feed.querySelectorAll('[data-menu]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const postId = btn.dataset.menu;
+      const pop = feed.querySelector(`[data-menu-pop="${postId}"]`);
+      if (!pop) return;
+      const isHidden = pop.hasAttribute('hidden');
+      // close others
+      feed.querySelectorAll('[data-menu-pop]').forEach(x => { if (x !== pop) x.setAttribute('hidden', ''); });
+      if (isHidden) pop.removeAttribute('hidden');
+      else pop.setAttribute('hidden', '');
+    });
+  });
+
+  feed.querySelectorAll('.menu__item').forEach(item => {
+    item.addEventListener('click', () => {
+      const act = item.dataset.act;
+      if (act === 'copy') toast('Demo: copy link');
+      else if (act === 'save') toast('Demo: đã lưu');
+      else toast('Demo: đã gửi report');
+      // close all
+      feed.querySelectorAll('[data-menu-pop]').forEach(x => x.setAttribute('hidden', ''));
+    });
+  });
+
+  // close menus on outside click
+  document.addEventListener('click', () => {
+    feed.querySelectorAll('[data-menu-pop]').forEach(x => x.setAttribute('hidden', ''));
+  }, { once: true });
+
+  feed.querySelectorAll('[data-share]').forEach(btn => {
+    btn.addEventListener('click', () => toast('Demo: share sheet'));
+  });
 
   feed.querySelectorAll('[data-like]').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -430,6 +478,8 @@ function renderPostHtml(me, db, p) {
 
   const media = p.media || autoMediaForPost(p);
 
+  const share = autoShareCardForPost(p);
+
   return `
     <article class="card post">
       <div class="post__top">
@@ -438,16 +488,36 @@ function renderPostHtml(me, db, p) {
           <div class="post__name"><a href="javascript:void(0)" data-open="${p.userId}">${esc(u?.name || 'Unknown')}</a></div>
           <div class="post__time">${fmtTime(p.ts)}</div>
         </div>
+
+        <div class="post__menu">
+          <button class="iconBtn" type="button" aria-label="Menu" data-menu="${p.id}">⋯</button>
+          <div class="menu" data-menu-pop="${p.id}" hidden>
+            <button class="menu__item" type="button" data-act="save" data-post="${p.id}">Lưu bài viết (demo)</button>
+            <button class="menu__item" type="button" data-act="report" data-post="${p.id}">Báo cáo (demo)</button>
+            <button class="menu__item" type="button" data-act="copy" data-post="${p.id}">Copy link (demo)</button>
+          </div>
+        </div>
+
         <span class="tag">${liked ? 'Đã like' : 'Bài viết'}</span>
       </div>
       <p class="post__text">${esc(p.text)}</p>
 
       ${media ? `<div class="post__media" aria-hidden="true"><span class="post__mediaEmoji">${media.emoji}</span></div>` : ''}
+      ${share ? `
+        <div class="shareCard" aria-label="Shared link preview">
+          <div class="shareCard__thumb">${share.emoji}</div>
+          <div class="shareCard__body">
+            <div class="shareCard__site">${esc(share.site)}</div>
+            <div class="shareCard__title">${esc(share.title)}</div>
+            <div class="shareCard__desc">${esc(share.desc)}</div>
+          </div>
+        </div>
+      ` : ''}
 
       <div class="post__actions">
         <button class="pill btn ${liked ? 'btn--primary' : ''}" type="button" data-like="${p.id}">👍 Like (${likes.size})</button>
         <span class="pill">💬 Comment (${comments.length})</span>
-        <span class="pill">🔁 Share (demo)</span>
+        <button class="pill btn" type="button" data-share="${p.id}">🔁 Share</button>
       </div>
 
       <div class="comments">
@@ -474,11 +544,23 @@ function renderPostHtml(me, db, p) {
 }
 
 function autoMediaForPost(p) {
-  // phase 1: sprinkle a few media blocks for "Facebook feel"
+  // Sprinkle a few media blocks for "Facebook feel"
   const last = p.id?.charCodeAt(p.id.length - 1) || 0;
   if (last % 4 !== 0) return null;
   const emoji = ['🖼️','🌆','🎉','📸'][last % 4];
   return { kind: 'photo', emoji };
+}
+
+function autoShareCardForPost(p) {
+  // Sprinkle some link previews
+  const last = p.id?.charCodeAt(p.id.length - 1) || 0;
+  if (last % 5 !== 0) return null;
+  const options = [
+    { site: 'plutoso.app', title: 'PlutoSo — Social demo', desc: 'UI giống Facebook, chạy GitHub Pages.', emoji: '🔗' },
+    { site: 'news.demo', title: 'Tin nóng (demo)', desc: 'Bản tin tổng hợp — chỉ là placeholder.', emoji: '📰' },
+    { site: 'dev.blog', title: 'Bài viết kỹ thuật', desc: 'Tối ưu UI, layout, micro-interactions.', emoji: '🧩' },
+  ];
+  return options[last % options.length];
 }
 
 function renderProfile(me, userId) {
