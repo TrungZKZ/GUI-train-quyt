@@ -116,8 +116,14 @@ supabase functions deploy sign-media
 
 Set required secrets for the function (server-side):
 ```bash
-supabase secrets set PLUTOSO_SUPABASE_URL="https://cvjhfjadnczqrkpvzetl.supabase.co"
-supabase secrets set PLUTOSO_SERVICE_ROLE_KEY="<YOUR_SERVICE_ROLE_KEY>"
+# Either set PLUTOSO_* secrets (recommended) or SUPABASE_* secrets if your CLI allows.
+# Preferred:
+# supabase secrets set PLUTOSO_SUPABASE_URL="https://cvjhfjadnczqrkpvzetl.supabase.co"
+# supabase secrets set PLUTOSO_SERVICE_ROLE_KEY="<YOUR_SERVICE_ROLE_KEY>"
+#
+# Fallback:
+# supabase secrets set SUPABASE_URL="https://cvjhfjadnczqrkpvzetl.supabase.co"
+# supabase secrets set SUPABASE_SERVICE_ROLE_KEY="<YOUR_SERVICE_ROLE_KEY>"
 ```
 
 ## 4) Frontend config
