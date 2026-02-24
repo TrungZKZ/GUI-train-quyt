@@ -33,7 +33,8 @@ Deno.serve(async (req) => {
       headers: {
         "access-control-allow-origin": "*",
         "access-control-allow-methods": "POST, OPTIONS",
-        "access-control-allow-headers": "content-type, authorization, apikey",
+        // supabase-js adds x-client-info header
+        "access-control-allow-headers": "content-type, authorization, apikey, x-client-info",
       },
     });
   }
@@ -120,6 +121,6 @@ function corsHeaders() {
   return {
     "access-control-allow-origin": "*",
     "access-control-allow-methods": "POST, OPTIONS",
-    "access-control-allow-headers": "content-type, authorization, apikey",
+    "access-control-allow-headers": "content-type, authorization, apikey, x-client-info",
   };
 }
