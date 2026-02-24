@@ -111,8 +111,19 @@ a{color:inherit}
 .post__media{margin-top:10px;height:220px;border-radius:18px;border:1px solid rgba(255,255,255,.12);
   background:linear-gradient(135deg, rgba(108,92,231,.35), rgba(0,210,211,.16));display:flex;align-items:center;justify-content:center}
 .post__mediaEmoji{font-size:56px;filter: drop-shadow(0 10px 20px rgba(0,0,0,.35));}
-.post__actions{display:flex;gap:10px;margin-top:12px;flex-wrap:wrap}
+.post__actions{display:flex;gap:10px;margin-top:12px;flex-wrap:wrap;align-items:center}
 .tag{font-size:12px;padding:6px 10px;border-radius:999px;border:1px solid rgba(255,255,255,.14);background:rgba(6,11,20,.25)}
+
+/* Reactions */
+.reactWrap{display:inline-flex;align-items:center;gap:6px;position:relative}
+.reactOpen{width:32px;height:36px;border-radius:12px;border:1px solid rgba(255,255,255,.12);background:rgba(6,11,20,.25);color:var(--text);cursor:pointer}
+.reactOpen:hover{background:rgba(6,11,20,.45)}
+.reactPop{position:absolute;left:0;top:44px;display:flex;gap:8px;padding:10px;border-radius:16px;border:1px solid rgba(255,255,255,.12);
+  background:rgba(15,26,46,.95);box-shadow:0 18px 40px rgba(0,0,0,.35);z-index:30}
+.react{width:40px;height:40px;border-radius:14px;border:1px solid rgba(255,255,255,.12);background:rgba(6,11,20,.25);cursor:pointer;font-size:20px}
+.react:hover{transform:translateY(-2px);transition:transform .10s ease;background:rgba(6,11,20,.45)}
+.reactSummary{display:inline-flex;align-items:center;gap:8px;padding:8px 10px;border-radius:999px;border:1px solid rgba(255,255,255,.10);background:rgba(6,11,20,.20)}
+.reactIcons{font-size:14px}
 
 .comments{margin-top:12px;border-top:1px solid rgba(255,255,255,.10);padding-top:10px;display:grid;gap:8px}
 .comment{display:flex;gap:10px;align-items:flex-start}

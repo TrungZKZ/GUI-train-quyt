@@ -42,7 +42,8 @@ function defaultDb() {
 
   return {
     posts: seedPosts,
-    likes: {},     // postId -> Set(userId) serialized as array
+    likes: {},     // legacy: postId -> Set(userId) serialized as array
+    reactions: {}, // postId -> { userId: reaction }
     comments: {},  // postId -> [{id, userId, text, ts}]
     friends: {
       u1: ['u2','u3','u4'],
@@ -62,6 +63,14 @@ function loadDb() {
   try {
     const v = JSON.parse(localStorage.getItem(LS.db) || 'null');
     if (!v || typeof v !== 'object') throw 0;
+
+    // migrations / defaults
+    if (!v.reactions) v.reactions = {};
+    if (!v.likes) v.likes = {};
+    if (!v.comments) v.comments = {};
+    if (!v.friends) v.friends = {};
+    if (!v.messages) v.messages = {};
+
     return v;
   } catch {
     const db = defaultDb();
@@ -390,12 +399,50 @@ function renderStories(me) {
   });
 }
 
+const REACTIONS = [
+  { id: 'like', emoji: '👍', label: 'Like' },
+  { id: 'love', emoji: '❤️', label: 'Love' },
+  { id: 'haha', emoji: '😂', label: 'Haha' },
+  { id: 'wow', emoji: '😮', label: 'Wow' },
+  { id: 'sad', emoji: '😢', label: 'Sad' },
+  { id: 'angry', emoji: '😡', label: 'Angry' },
+];
+
 function getLikes(db, postId) {
+  // legacy set (kept for backward compatibility; not used for rendering anymore)
   const arr = db.likes[postId] || [];
   return new Set(arr);
 }
 function setLikes(db, postId, set) {
   db.likes[postId] = [...set];
+}
+
+function getReactions(db, postId) {
+  return db.reactions[postId] || {};
+}
+function setReaction(db, postId, userId, reactionId) {
+  db.reactions[postId] = db.reactions[postId] || {};
+  if (!reactionId) {
+    delete db.reactions[postId][userId];
+    return;
+  }
+  db.reactions[postId][userId] = reactionId;
+}
+function myReaction(db, postId, userId) {
+  return getReactions(db, postId)[userId] || null;
+}
+function reactionCounts(db, postId) {
+  const map = getReactions(db, postId);
+  const counts = {};
+  for (const r of Object.values(map)) {
+    counts[r] = (counts[r] || 0) + 1;
+  }
+  return counts;
+}
+function topReactions(db, postId) {
+  const counts = reactionCounts(db, postId);
+  const sorted = Object.entries(counts).sort((a,b)=>b[1]-a[1]);
+  return sorted.slice(0, 3).map(([id]) => REACTIONS.find(r=>r.id===id)?.emoji).filter(Boolean);
 }
 
 function drawFeed(me) {
@@ -431,9 +478,10 @@ function drawFeed(me) {
     });
   });
 
-  // close menus on outside click
+  // close menus/popovers on outside click
   document.addEventListener('click', () => {
     feed.querySelectorAll('[data-menu-pop]').forEach(x => x.setAttribute('hidden', ''));
+    feed.querySelectorAll('[data-react-pop]').forEach(x => x.setAttribute('hidden', ''));
   }, { once: true });
 
   feed.querySelectorAll('[data-share]').forEach(btn => {
@@ -442,11 +490,36 @@ function drawFeed(me) {
 
   feed.querySelectorAll('[data-like]').forEach(btn => {
     btn.addEventListener('click', () => {
-      const id = btn.dataset.like;
-      const likes = getLikes(db, id);
-      if (likes.has(me.id)) likes.delete(me.id);
-      else likes.add(me.id);
-      setLikes(db, id, likes);
+      const postId = btn.dataset.like;
+      // quick tap: toggle 👍
+      const current = myReaction(db, postId, me.id);
+      setReaction(db, postId, me.id, current === 'like' ? null : 'like');
+      saveDb(db);
+      drawFeed(me);
+    });
+  });
+
+  // reaction picker open
+  feed.querySelectorAll('[data-react-open]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const postId = btn.dataset.reactOpen;
+      const pop = feed.querySelector(`[data-react-pop="${postId}"]`);
+      if (!pop) return;
+      const isHidden = pop.hasAttribute('hidden');
+      feed.querySelectorAll('[data-react-pop]').forEach(x => { if (x !== pop) x.setAttribute('hidden',''); });
+      if (isHidden) pop.removeAttribute('hidden');
+      else pop.setAttribute('hidden','');
+    });
+  });
+
+  feed.querySelectorAll('[data-react]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const postId = btn.dataset.post;
+      const reactionId = btn.dataset.react;
+      const current = myReaction(db, postId, me.id);
+      setReaction(db, postId, me.id, current === reactionId ? null : reactionId);
       saveDb(db);
       drawFeed(me);
     });
@@ -472,12 +545,14 @@ function drawFeed(me) {
 
 function renderPostHtml(me, db, p) {
   const u = userById(p.userId);
-  const likes = getLikes(db, p.id);
   const comments = (db.comments[p.id] || []);
-  const liked = likes.has(me.id);
+
+  const mine = myReaction(db, p.id, me.id);
+  const counts = reactionCounts(db, p.id);
+  const top = topReactions(db, p.id);
+  const totalReacts = Object.values(counts).reduce((s, n) => s + n, 0);
 
   const media = p.media || autoMediaForPost(p);
-
   const share = autoShareCardForPost(p);
 
   return `
@@ -498,7 +573,7 @@ function renderPostHtml(me, db, p) {
           </div>
         </div>
 
-        <span class="tag">${liked ? 'Đã like' : 'Bài viết'}</span>
+        <span class="tag">${mine ? ('Bạn đã ' + (REACTIONS.find(r=>r.id===mine)?.label || 'react')) : 'Bài viết'}</span>
       </div>
       <p class="post__text">${esc(p.text)}</p>
 
@@ -515,7 +590,20 @@ function renderPostHtml(me, db, p) {
       ` : ''}
 
       <div class="post__actions">
-        <button class="pill btn ${liked ? 'btn--primary' : ''}" type="button" data-like="${p.id}">👍 Like (${likes.size})</button>
+        <div class="reactWrap">
+          <button class="pill btn ${mine ? 'btn--primary' : ''}" type="button" data-like="${p.id}">
+            ${REACTIONS.find(r=>r.id===mine)?.emoji || '👍'} ${REACTIONS.find(r=>r.id===mine)?.label || 'Like'}
+          </button>
+          <button class="reactOpen" type="button" data-react-open="${p.id}" aria-label="Chọn reaction">▾</button>
+          <div class="reactPop" data-react-pop="${p.id}" hidden>
+            ${REACTIONS.map(r => `<button class="react" type="button" data-react="${r.id}" data-post="${p.id}" title="${r.label}">${r.emoji}</button>`).join('')}
+          </div>
+        </div>
+
+        <div class="reactSummary">
+          ${totalReacts ? `<span class="reactIcons">${top.join(' ')}</span> <span>${totalReacts}</span>` : `<span class="muted">0 reactions</span>`}
+        </div>
+
         <span class="pill">💬 Comment (${comments.length})</span>
         <button class="pill btn" type="button" data-share="${p.id}">🔁 Share</button>
       </div>
