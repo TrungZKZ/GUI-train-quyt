@@ -452,6 +452,10 @@ function drawFeed(me) {
 
   feed.innerHTML = posts.map(p => renderPostHtml(me, db, p)).join('');
 
+  // Defensive: ensure popovers are hidden by default after re-render.
+  feed.querySelectorAll('[data-menu-pop]').forEach(x => x.setAttribute('hidden', ''));
+  feed.querySelectorAll('[data-react-pop]').forEach(x => x.setAttribute('hidden', ''));
+
   // post menus
   feed.querySelectorAll('[data-menu]').forEach(btn => {
     btn.addEventListener('click', (e) => {
