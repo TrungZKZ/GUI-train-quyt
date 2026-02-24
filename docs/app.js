@@ -3,6 +3,7 @@
 const LS = {
   session: 'plutoso.session.v1',
   db: 'plutoso.db.v1',
+  storiesSeen: 'plutoso.storiesSeen.v1'
 };
 
 const USERS = [
@@ -24,6 +25,18 @@ function toast(msg) {
   el.classList.add('toast--show');
   clearTimeout(toast._t);
   toast._t = setTimeout(() => el.classList.remove('toast--show'), 1400);
+}
+
+function loadSeenStories() {
+  try {
+    const v = JSON.parse(localStorage.getItem(LS.storiesSeen) || '[]');
+    return Array.isArray(v) ? new Set(v) : new Set();
+  } catch {
+    return new Set();
+  }
+}
+function saveSeenStories(set) {
+  localStorage.setItem(LS.storiesSeen, JSON.stringify([...set]));
 }
 
 function loadSession() {
@@ -383,18 +396,23 @@ function renderStories(me) {
   const el = document.getElementById('stories');
   if (!el) return;
 
+  const seen = loadSeenStories();
   const people = [me, ...USERS.filter(u => u.id !== me.id)];
-  el.innerHTML = people.map(u => `
-    <button class="story" type="button" data-story="${u.id}">
-      <div class="story__cover"></div>
-      <div class="story__avatar"><span class="avatar">${u.avatar}</span></div>
-      <div class="story__name">${esc(u.name)}</div>
-    </button>
-  `).join('');
+
+  el.innerHTML = people.map(u => {
+    const isSeen = seen.has(u.id);
+    return `
+      <button class="story ${isSeen ? 'story--seen' : ''}" type="button" data-story="${u.id}">
+        <div class="story__cover"></div>
+        <div class="story__avatar"><span class="avatar">${u.avatar}</span></div>
+        <div class="story__name">${esc(u.name)}</div>
+      </button>
+    `;
+  }).join('');
 
   el.querySelectorAll('[data-story]').forEach(btn => {
     btn.addEventListener('click', () => {
-      toast('Demo: story viewer sẽ làm ở phase sau');
+      openStoryViewer(me, btn.dataset.story);
     });
   });
 }
@@ -637,6 +655,165 @@ function autoMediaForPost(p) {
   if (last % 4 !== 0) return null;
   const emoji = ['🖼️','🌆','🎉','📸'][last % 4];
   return { kind: 'photo', emoji };
+}
+
+// --- Story Viewer ---
+const STORY = {
+  durationMs: 4200,
+  timer: null,
+  idx: 0,
+  items: [],
+  owner: null,
+  me: null,
+};
+
+function storiesForUser(userId) {
+  // Simple generated stories: 4 slides per user
+  const u = userById(userId) || { name: 'Unknown', avatar: '🙂' };
+  const palette = ['🪐','🌌','✨','🚀','🧠','🎨','🧩','📰'];
+  const base = userId.charCodeAt(userId.length - 1) || 1;
+  return Array.from({ length: 4 }).map((_, i) => {
+    const emoji = palette[(base + i) % palette.length];
+    return {
+      id: `${userId}_s${i+1}`,
+      userId,
+      emoji,
+      ts: Date.now() - (i * 1000 * 60 * 12 + (base % 10) * 1000 * 10),
+    };
+  });
+}
+
+function openStoryViewer(me, userId) {
+  const dialog = document.getElementById('storyDialog');
+  if (!dialog) return;
+
+  STORY.me = me;
+  STORY.owner = userById(userId) || me;
+  STORY.items = storiesForUser(userId);
+  STORY.idx = 0;
+
+  renderStoryUi();
+  dialog.showModal();
+
+  // mark seen
+  const seen = loadSeenStories();
+  seen.add(userId);
+  saveSeenStories(seen);
+  // reflect seen state in stories bar
+  renderStories(me);
+
+  startStoryTimer();
+}
+
+function closeStoryViewer() {
+  const dialog = document.getElementById('storyDialog');
+  if (!dialog) return;
+  stopStoryTimer();
+  dialog.close();
+}
+
+function stopStoryTimer() {
+  if (STORY.timer) {
+    clearInterval(STORY.timer);
+    STORY.timer = null;
+  }
+}
+
+function startStoryTimer() {
+  stopStoryTimer();
+  const startedAt = Date.now();
+  const fill = () => {
+    const elapsed = Date.now() - startedAt;
+    const pct = Math.min(100, (elapsed / STORY.durationMs) * 100);
+    const f = document.querySelector(`[data-story-fill="${STORY.idx}"]`);
+    if (f) f.style.width = pct + '%';
+    if (pct >= 100) {
+      nextStory();
+    }
+  };
+
+  // init bar
+  const f = document.querySelector(`[data-story-fill="${STORY.idx}"]`);
+  if (f) f.style.width = '0%';
+
+  STORY.timer = setInterval(fill, 40);
+}
+
+function renderStoryUi() {
+  const owner = STORY.owner;
+  const item = STORY.items[STORY.idx];
+  if (!owner || !item) return;
+
+  document.getElementById('storyAvatar').textContent = owner.avatar;
+  document.getElementById('storyName').textContent = owner.name;
+  document.getElementById('storyTime').textContent = fmtTime(item.ts);
+  document.getElementById('storyContent').textContent = item.emoji;
+
+  // progress bars
+  const prog = document.getElementById('storyProgress');
+  prog.innerHTML = STORY.items.map((_, i) => {
+    const done = i < STORY.idx;
+    return `
+      <div class="storyProgress__bar">
+        <div class="storyProgress__fill" data-story-fill="${i}" style="width:${done ? 100 : 0}%"></div>
+      </div>
+    `;
+  }).join('');
+
+  // nav availability
+  document.getElementById('storyPrev').disabled = STORY.idx === 0;
+}
+
+function prevStory() {
+  if (STORY.idx <= 0) return;
+  STORY.idx -= 1;
+  renderStoryUi();
+  startStoryTimer();
+}
+
+function nextStory() {
+  if (STORY.idx >= STORY.items.length - 1) {
+    closeStoryViewer();
+    return;
+  }
+  STORY.idx += 1;
+  renderStoryUi();
+  startStoryTimer();
+}
+
+function installStoryHandlers() {
+  const dialog = document.getElementById('storyDialog');
+  if (!dialog) return;
+
+  // close
+  dialog.addEventListener('close', () => stopStoryTimer());
+
+  document.getElementById('storyPrev').addEventListener('click', prevStory);
+  document.getElementById('storyNext').addEventListener('click', nextStory);
+
+  const reply = document.getElementById('storyReply');
+  document.getElementById('storySend').addEventListener('click', () => {
+    const t = (reply.value || '').trim();
+    if (!t) return;
+    reply.value = '';
+    toast('Demo: đã gửi reply');
+  });
+
+  // click left/right to navigate
+  const stage = document.getElementById('storyStage');
+  stage.addEventListener('click', (e) => {
+    const r = stage.getBoundingClientRect();
+    const x = e.clientX - r.left;
+    if (x < r.width * 0.35) prevStory();
+    else nextStory();
+  });
+
+  // keyboard
+  document.addEventListener('keydown', (e) => {
+    if (!dialog.open) return;
+    if (e.key === 'ArrowLeft') prevStory();
+    if (e.key === 'ArrowRight') nextStory();
+  });
 }
 
 function autoShareCardForPost(p) {
@@ -886,4 +1063,5 @@ window.addEventListener('hashchange', render);
 
 // init
 ensureGlobalUiHandlers();
+installStoryHandlers();
 render();

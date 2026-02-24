@@ -8,7 +8,38 @@
 </head>
 <body>
   <div id="app"></div>
+
+  <dialog id="storyDialog" class="dialog">
+    <form method="dialog" class="dialog__wrap storyViewer">
+      <button class="dialog__close" aria-label="Đóng">✕</button>
+
+      <div class="storyViewer__top">
+        <div class="storyProgress" id="storyProgress" aria-hidden="true"></div>
+        <div class="storyHeader">
+          <span class="avatar" id="storyAvatar">🙂</span>
+          <div>
+            <div class="storyHeader__name" id="storyName">Story</div>
+            <div class="muted storyHeader__time" id="storyTime">vừa xong</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="storyStage" id="storyStage">
+        <div class="storyStage__bg" id="storyBg"></div>
+        <div class="storyStage__content" id="storyContent">🪐</div>
+
+        <button class="storyNav storyNav--left" type="button" id="storyPrev" aria-label="Trước">‹</button>
+        <button class="storyNav storyNav--right" type="button" id="storyNext" aria-label="Sau">›</button>
+      </div>
+
+      <div class="storyViewer__footer">
+        <input id="storyReply" class="storyReply" placeholder="Trả lời (demo)..." />
+        <button id="storySend" class="pill btn btn--primary" type="button">Gửi</button>
+      </div>
+    </form>
+  </dialog>
+
   <div id="toast" class="toast" role="status" aria-live="polite" aria-atomic="true"></div>
-  <script src="./app.js?v=20260224-1"></script>
+  <script src="./app.js?v=20260224-2"></script>
 </body>
 </html>
