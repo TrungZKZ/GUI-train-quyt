@@ -23,6 +23,9 @@ body{
 
 a{color:inherit}
 
+/* Ensure hidden attribute always hides, even if overridden elsewhere */
+[hidden]{display:none !important}
+
 .container{max-width:1120px;margin:0 auto;padding:0 16px}
 
 .topbar{

@@ -478,11 +478,7 @@ function drawFeed(me) {
     });
   });
 
-  // close menus/popovers on outside click
-  document.addEventListener('click', () => {
-    feed.querySelectorAll('[data-menu-pop]').forEach(x => x.setAttribute('hidden', ''));
-    feed.querySelectorAll('[data-react-pop]').forEach(x => x.setAttribute('hidden', ''));
-  }, { once: true });
+  // Outside click closing is handled globally (registered once)
 
   feed.querySelectorAll('[data-share]').forEach(btn => {
     btn.addEventListener('click', () => toast('Demo: share sheet'));
@@ -855,8 +851,35 @@ function renderMessages(me) {
   });
 }
 
+function closeAllPopovers(root=document) {
+  root.querySelectorAll('[data-menu-pop]').forEach(x => x.setAttribute('hidden', ''));
+  root.querySelectorAll('[data-react-pop]').forEach(x => x.setAttribute('hidden', ''));
+}
+
+function ensureGlobalUiHandlers() {
+  if (window.__plutosoUiHandlersInstalled) return;
+  window.__plutosoUiHandlersInstalled = true;
+
+  // Click outside popovers closes them.
+  document.addEventListener('click', (e) => {
+    const t = e.target;
+    if (t && (t.closest?.('.post__menu') || t.closest?.('.reactWrap'))) {
+      return;
+    }
+    closeAllPopovers(document);
+  });
+
+  // Escape closes popovers.
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      closeAllPopovers(document);
+    }
+  });
+}
+
 // events
 window.addEventListener('hashchange', render);
 
 // init
+ensureGlobalUiHandlers();
 render();
