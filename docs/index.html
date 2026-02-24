@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Minishop — Demo</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="container topbar__row">
+      <a class="brand" href="./index.html">Minishop</a>
+
+      <form id="searchForm" class="search" autocomplete="off">
+        <input id="q" class="search__input" placeholder="Tìm sản phẩm, thương hiệu..." />
+        <button class="search__btn" type="submit">Tìm</button>
+      </form>
+
+      <button id="cartBtn" class="cartBtn" type="button" aria-haspopup="dialog">
+        Giỏ hàng <span id="cartCount" class="cartCount">0</span>
+      </button>
+    </div>
+
+    <div class="container categories" id="categories"></div>
+  </header>
+
+  <main class="container">
+    <section class="hero">
+      <div>
+        <h1>Mua sắm nhanh — demo kiểu marketplace</h1>
+        <p>Không thanh toán thật. Có tìm kiếm, lọc, chi tiết sản phẩm, giỏ hàng (localStorage), checkout giả lập.</p>
+        <div class="hero__chips" id="chips"></div>
+      </div>
+      <div class="hero__card">
+        <div class="stat">
+          <div class="stat__k">Free ship</div>
+          <div class="stat__v">cho đơn demo</div>
+        </div>
+        <div class="stat">
+          <div class="stat__k">Flash sale</div>
+          <div class="stat__v">giả lập</div>
+        </div>
+        <div class="stat">
+          <div class="stat__k">Hoàn xu</div>
+          <div class="stat__v">0đ</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="toolbar">
+      <div class="toolbar__left">
+        <label class="label">Danh mục</label>
+        <select id="categorySelect" class="select"></select>
+
+        <label class="label">Sắp xếp</label>
+        <select id="sortSelect" class="select">
+          <option value="popular">Phổ biến</option>
+          <option value="priceAsc">Giá tăng dần</option>
+          <option value="priceDesc">Giá giảm dần</option>
+          <option value="ratingDesc">Đánh giá cao</option>
+        </select>
+      </div>
+      <div class="toolbar__right">
+        <label class="label">Khoảng giá</label>
+        <input id="minPrice" class="input" type="number" min="0" placeholder="Min" />
+        <span class="sep">—</span>
+        <input id="maxPrice" class="input" type="number" min="0" placeholder="Max" />
+        <button id="applyFilters" class="btn" type="button">Lọc</button>
+        <button id="resetFilters" class="btn btn--ghost" type="button">Reset</button>
+      </div>
+    </section>
+
+    <section>
+      <div id="resultsMeta" class="resultsMeta"></div>
+      <div id="grid" class="grid" aria-live="polite"></div>
+    </section>
+  </main>
+
+  <dialog id="productDialog" class="dialog">
+    <form method="dialog" class="dialog__wrap">
+      <button class="dialog__close" aria-label="Đóng">✕</button>
+      <div id="productView" class="productView"></div>
+    </form>
+  </dialog>
+
+  <dialog id="cartDialog" class="dialog">
+    <form method="dialog" class="dialog__wrap">
+      <button class="dialog__close" aria-label="Đóng">✕</button>
+      <div class="cart">
+        <h2>Giỏ hàng</h2>
+        <div id="cartItems" class="cartItems"></div>
+        <div class="cartSummary">
+          <div class="cartSummary__row">
+            <span>Tạm tính</span>
+            <strong id="cartSubtotal">0₫</strong>
+          </div>
+          <div class="cartSummary__row">
+            <span>Phí ship (demo)</span>
+            <strong>0₫</strong>
+          </div>
+          <div class="cartSummary__row cartSummary__row--total">
+            <span>Tổng</span>
+            <strong id="cartTotal">0₫</strong>
+          </div>
+          <button id="checkoutBtn" class="btn btn--primary" type="button">Checkout</button>
+        </div>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="checkoutDialog" class="dialog">
+    <form id="checkoutForm" class="dialog__wrap checkout" method="dialog">
+      <button class="dialog__close" aria-label="Đóng">✕</button>
+      <h2>Checkout (giả lập)</h2>
+      <div class="checkout__grid">
+        <div>
+          <label class="label">Họ tên</label>
+          <input class="input" name="name" required placeholder="Nguyễn Văn A" />
+        </div>
+        <div>
+          <label class="label">SĐT</label>
+          <input class="input" name="phone" required placeholder="090..." />
+        </div>
+        <div class="checkout__full">
+          <label class="label">Địa chỉ</label>
+          <input class="input" name="address" required placeholder="Số nhà, đường, phường/xã, quận/huyện, tỉnh/thành" />
+        </div>
+        <div class="checkout__full">
+          <label class="label">Ghi chú</label>
+          <textarea class="textarea" name="note" placeholder="Ví dụ: giao giờ hành chính"></textarea>
+        </div>
+      </div>
+      <div class="checkout__actions">
+        <button class="btn btn--ghost" value="cancel" type="submit">Hủy</button>
+        <button class="btn btn--primary" value="confirm" type="submit">Đặt hàng</button>
+      </div>
+      <p class="muted">Demo: bấm “Đặt hàng” sẽ tạo đơn hàng giả và clear giỏ hàng.</p>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" aria-atomic="true"></div>
+
+  <script src="./app.js"></script>
+</body>
+</html>
