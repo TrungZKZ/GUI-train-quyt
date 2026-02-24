@@ -557,7 +557,8 @@ function renderFeed(me) {
         const ext = (pendingFile.name.split('.').pop() || 'bin').toLowerCase();
         const path = `${user.id}/${Date.now()}_${Math.random().toString(16).slice(2)}.${ext}`;
 
-        const bucket = 'media';
+        // Bucket name must exist in Supabase Storage
+        const bucket = 'Social';
         const { error: upErr } = await supabase.storage.from(bucket).upload(path, pendingFile, {
           cacheControl: '3600',
           upsert: false,
