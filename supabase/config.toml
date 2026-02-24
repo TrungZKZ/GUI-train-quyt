@@ -1,0 +1,4 @@
+# Supabase project config (for Edge Functions)
+
+[functions.sign-media]
+verify_jwt = false
