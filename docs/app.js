@@ -6,6 +6,17 @@ const LS = {
   storiesSeen: 'plutoso.storiesSeen.v1'
 };
 
+// --- Supabase (public) ---
+// IMPORTANT: use only ANON/PUBLISHABLE key in frontend.
+const SUPABASE_PROJECT_ID = 'cvjhfjadnczqrkpvzetl';
+const SUPABASE_URL = `https://${SUPABASE_PROJECT_ID}.supabase.co`;
+// Provided by user (publishable/anon). Safe to embed.
+const SUPABASE_ANON_KEY = 'sb_publishable_eedGdwphvFDrfIewRPMZgw_qwTql4PX';
+
+const supabase = (window.supabase && window.supabase.createClient)
+  ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+  : null;
+
 const USERS = [
   { id: 'u1', name: 'Trung', avatar: '🪐', bio: 'Sếp tổng PlutoSo (demo).' },
   { id: 'u2', name: 'Quy', avatar: '🚀', bio: 'Thích làm sản phẩm nhanh & gọn.' },
@@ -44,6 +55,20 @@ function loadSession() {
 }
 function saveSession(s) {
   localStorage.setItem(LS.session, JSON.stringify(s));
+}
+
+async function getAuthUser() {
+  if (!supabase) return null;
+  const { data, error } = await supabase.auth.getUser();
+  if (error) return null;
+  return data.user || null;
+}
+
+function userLabelFromEmail(email) {
+  if (!email) return 'User';
+  const at = email.indexOf('@');
+  const base = (at > 0 ? email.slice(0, at) : email).slice(0, 24);
+  return base || 'User';
 }
 
 function defaultDb() {
@@ -130,7 +155,39 @@ function mount(html) {
   document.getElementById('app').innerHTML = html;
 }
 
-function render() {
+async function render() {
+  // Prefer Supabase auth session when available.
+  if (supabase) {
+    const user = await getAuthUser();
+    if (!user) {
+      renderLoginSupabase();
+      return;
+    }
+    const me = {
+      id: user.id,
+      name: user.user_metadata?.name || userLabelFromEmail(user.email),
+      avatar: (user.user_metadata?.avatar || '🪐'),
+      bio: 'PlutoSo user',
+      email: user.email,
+      __supabase: true,
+    };
+
+    const { name, arg } = route();
+    renderShell(me, name);
+
+    if (name === 'profile') {
+      renderProfile(me, arg || me.id);
+    } else if (name === 'friends') {
+      renderFriends(me);
+    } else if (name === 'messages') {
+      renderMessages(me);
+    } else {
+      renderFeed(me);
+    }
+    return;
+  }
+
+  // Fallback: local mock login
   const session = loadSession();
   if (!session || !session.userId) {
     renderLogin();
@@ -151,6 +208,53 @@ function render() {
   } else {
     renderFeed(me);
   }
+}
+
+function renderLoginSupabase() {
+  mount(`
+    <div class="login">
+      <div class="card loginCard">
+        <div class="card__hd">
+          <a class="brand" href="#">PlutoSo</a>
+          <span class="muted">Đăng nhập thật (Supabase)</span>
+        </div>
+        <div class="card__bd">
+          <h2 style="margin:0">Đăng nhập</h2>
+          <p class="muted" style="margin:8px 0 0">Email/password. (Backend: Supabase)</p>
+
+          <div style="display:grid;gap:10px;margin-top:12px">
+            <input id="authEmail" class="storyReply" placeholder="email@domain.com" />
+            <input id="authPass" class="storyReply" type="password" placeholder="password" />
+            <div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">
+              <button id="authSignup" class="pill btn" type="button">Sign up</button>
+              <button id="authLogin" class="pill btn btn--primary" type="button">Login</button>
+            </div>
+            <p class="muted" style="font-size:12px;margin:6px 0 0">Nếu bật Email confirmation trong Supabase thì account mới sẽ cần confirm email.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  `);
+
+  const emailEl = document.getElementById('authEmail');
+  const passEl = document.getElementById('authPass');
+
+  document.getElementById('authLogin').addEventListener('click', async () => {
+    const email = emailEl.value.trim();
+    const password = passEl.value;
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) return toast('Login lỗi: ' + error.message);
+    toast('Login OK');
+    render();
+  });
+
+  document.getElementById('authSignup').addEventListener('click', async () => {
+    const email = emailEl.value.trim();
+    const password = passEl.value;
+    const { error } = await supabase.auth.signUp({ email, password });
+    if (error) return toast('Signup lỗi: ' + error.message);
+    toast('Signup OK (có thể cần confirm email)');
+  });
 }
 
 function renderLogin() {
@@ -356,24 +460,98 @@ function renderFeed(me) {
   // stories row
   renderStories(me);
 
-  let attachPhoto = false;
+  // Upload from device (Supabase) OR fallback demo emoji
+  const filePicker = document.createElement('input');
+  filePicker.type = 'file';
+  filePicker.accept = 'image/*,video/*';
+  filePicker.style.display = 'none';
+  document.body.appendChild(filePicker);
+
+  let pendingFile = null;
   document.getElementById('photoBtn').addEventListener('click', () => {
-    attachPhoto = !attachPhoto;
-    toast(attachPhoto ? 'Đã gắn ảnh (demo)' : 'Đã bỏ ảnh');
+    if (!supabase) {
+      pendingFile = pendingFile ? null : { kind: 'photo', emoji: '🖼️' };
+      toast(pendingFile ? 'Đã gắn ảnh (demo)' : 'Đã bỏ ảnh');
+      return;
+    }
+    filePicker.value = '';
+    filePicker.click();
   });
 
-  document.getElementById('postBtn').addEventListener('click', () => {
+  filePicker.addEventListener('change', () => {
+    const f = filePicker.files && filePicker.files[0];
+    if (!f) return;
+    pendingFile = f;
+    toast(`Đã chọn file: ${f.name}`);
+  });
+
+  document.getElementById('postBtn').addEventListener('click', async () => {
     const t = document.getElementById('postText').value.trim();
     if (!t) return toast('Nhập nội dung trước');
-    const post = mkPost(uid('p'), me.id, t, nowTs());
-    // phase 1: media placeholder flag
-    if (attachPhoto) post.media = { kind: 'photo', emoji: '🖼️' };
-    db.posts.unshift(post);
-    saveDb(db);
-    document.getElementById('postText').value = '';
-    attachPhoto = false;
-    toast('Đã đăng');
-    drawFeed(me);
+
+    // Local fallback: old behavior
+    if (!supabase) {
+      const post = mkPost(uid('p'), me.id, t, nowTs());
+      if (pendingFile && pendingFile.kind) post.media = pendingFile;
+      db.posts.unshift(post);
+      saveDb(db);
+      document.getElementById('postText').value = '';
+      pendingFile = null;
+      toast('Đã đăng');
+      drawFeed(me);
+      return;
+    }
+
+    // Supabase-backed post + optional media upload
+    try {
+      let mediaUrl = null;
+      let mediaType = null;
+      let mediaMeta = null;
+
+      if (pendingFile && pendingFile instanceof File) {
+        const user = await getAuthUser();
+        if (!user) throw new Error('Not logged in');
+
+        const ext = (pendingFile.name.split('.').pop() || 'bin').toLowerCase();
+        const path = `${user.id}/${Date.now()}_${Math.random().toString(16).slice(2)}.${ext}`;
+
+        const bucket = 'media';
+        const { error: upErr } = await supabase.storage.from(bucket).upload(path, pendingFile, {
+          cacheControl: '3600',
+          upsert: false,
+          contentType: pendingFile.type || undefined,
+        });
+        if (upErr) throw upErr;
+
+        const { data: pub } = supabase.storage.from(bucket).getPublicUrl(path);
+        mediaUrl = pub.publicUrl;
+        mediaType = pendingFile.type.startsWith('video/') ? 'video' : 'image';
+        mediaMeta = { url: mediaUrl, type: mediaType, name: pendingFile.name };
+      }
+
+      // Insert post
+      const { data: ins, error: insErr } = await supabase
+        .from('posts')
+        .insert({ user_id: (await getAuthUser()).id, text: t })
+        .select('id, user_id, text, created_at')
+        .single();
+      if (insErr) throw insErr;
+
+      if (mediaMeta) {
+        const { error: mErr } = await supabase
+          .from('post_media')
+          .insert({ post_id: ins.id, url: mediaMeta.url, media_type: mediaMeta.type, file_name: mediaMeta.name });
+        if (mErr) throw mErr;
+      }
+
+      document.getElementById('postText').value = '';
+      pendingFile = null;
+      toast('Đã đăng (server)');
+      // For now, just refresh local feed from server in a later milestone.
+      // In this milestone, keep existing local feed; we will add server feed fetch next.
+    } catch (e) {
+      toast('Post/upload lỗi: ' + (e?.message || String(e)));
+    }
   });
 
   // Skeleton loading (UI feel)
