@@ -180,10 +180,21 @@ async function render() {
   // Prefer Supabase auth session when available.
   if (supabase) {
     const user = await getAuthUser();
+
+    // Guest mode: public feed only.
+    if (!user && window.__plutosoGuest) {
+      const me = { id: 'guest', name: 'Guest', avatar: '👀', bio: 'Guest mode', __guest: true };
+      const { name } = route();
+      renderShell(me, name || 'feed');
+      renderFeed(me);
+      return;
+    }
+
     if (!user) {
       renderLoginSupabase();
       return;
     }
+
     const me = {
       id: user.id,
       name: user.user_metadata?.name || userLabelFromEmail(user.email),
@@ -247,10 +258,11 @@ function renderLoginSupabase() {
             <input id="authEmail" class="storyReply" placeholder="email@domain.com" />
             <input id="authPass" class="storyReply" type="password" placeholder="password" />
             <div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">
+              <button id="authGuest" class="pill btn" type="button">Vào xem thử (Guest)</button>
               <button id="authSignup" class="pill btn" type="button">Sign up</button>
               <button id="authLogin" class="pill btn btn--primary" type="button">Login</button>
             </div>
-            <p class="muted" style="font-size:12px;margin:6px 0 0">Nếu bật Email confirmation trong Supabase thì account mới sẽ cần confirm email.</p>
+            <p class="muted" style="font-size:12px;margin:6px 0 0">Demo nhanh: tắt Email confirmation trong Supabase để Sign up/Login hoạt động ngay.</p>
           </div>
         </div>
       </div>
@@ -260,12 +272,21 @@ function renderLoginSupabase() {
   const emailEl = document.getElementById('authEmail');
   const passEl = document.getElementById('authPass');
 
+  document.getElementById('authGuest').addEventListener('click', () => {
+    // Guest mode: public feed only.
+    window.__plutosoGuest = true;
+    toast('Đang vào chế độ Guest');
+    setRoute('feed');
+    render();
+  });
+
   document.getElementById('authLogin').addEventListener('click', async () => {
     const email = emailEl.value.trim();
     const password = passEl.value;
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) return toast('Login lỗi: ' + error.message);
     toast('Login OK');
+    window.__plutosoGuest = false;
     render();
   });
 
@@ -274,7 +295,7 @@ function renderLoginSupabase() {
     const password = passEl.value;
     const { error } = await supabase.auth.signUp({ email, password });
     if (error) return toast('Signup lỗi: ' + error.message);
-    toast('Signup OK (có thể cần confirm email)');
+    toast('Signup OK. Nếu không vào được, hãy tắt Email confirmation trong Supabase.');
   });
 }
 
@@ -723,11 +744,9 @@ async function drawFeedFromServer(me) {
 
   // Render
   feed.innerHTML = serverPosts.map(p => {
-    // patch a tiny user mapping for server users
-    const u = { id: p.userId, name: p.__display, avatar: '🪐' };
     // create a throwaway rendering db
     const tempDb = { ...db, posts: [p] };
-    return renderPostHtml(me, tempDb, { ...p, userId: p.userId, ts: p.ts, media: p.media });
+    return renderPostHtml(me, tempDb, { ...p, userId: p.userId, ts: p.ts, media: p.media, __display: p.__display });
   }).join('');
 
   wireFeedHandlers(me, db);
@@ -839,7 +858,8 @@ function wireFeedHandlers(me, db) {
 }
 
 function renderPostHtml(me, db, p) {
-  const u = userById(p.userId);
+  // Support server-rendered posts (have media.url and may not exist in local USERS)
+  const u = userById(p.userId) || { id: p.userId, name: p.__display || 'User', avatar: '🪐', bio: '' };
   const comments = (db.comments[p.id] || []);
 
   const mine = myReaction(db, p.id, me.id);
@@ -872,7 +892,14 @@ function renderPostHtml(me, db, p) {
       </div>
       <p class="post__text">${esc(p.text)}</p>
 
-      ${media ? `<div class="post__media" aria-hidden="true"><span class="post__mediaEmoji">${media.emoji}</span></div>` : ''}
+      ${media ? (
+        media.url ? (
+          media.kind === 'video'
+            ? `<video class="post__media" src="${media.url}" playsinline muted controls></video>`
+            : `<img class="post__media" src="${media.url}" alt="post media" />`
+        )
+        : `<div class="post__media" aria-hidden="true"><span class="post__mediaEmoji">${media.emoji}</span></div>`
+      ) : ''}
       ${share ? `
         <div class="shareCard" aria-label="Shared link preview">
           <div class="shareCard__thumb">${share.emoji}</div>
