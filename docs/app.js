@@ -1,3 +1,4 @@
+(function(){
 // PlutoSo (demo) — static, no backend. Data in localStorage.
 
 // --- Crash guard (so blank screens become debuggable) ---
@@ -1349,3 +1350,5 @@ window.addEventListener('hashchange', () => { void renderSafe(); });
 ensureGlobalUiHandlers();
 installStoryHandlers();
 void renderSafe();
+
+})();
