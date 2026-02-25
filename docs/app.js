@@ -87,11 +87,12 @@ async function invokeSignMediaRaw(items, expiresIn = 300) {
       },
       body: JSON.stringify({ items, expiresIn }),
     });
+    const text = await res.text();
     if (!res.ok) {
-      const text = await res.text();
       return { ok: false, status: res.status, text };
     }
-    const data = await res.json();
+    let data = null;
+    try { data = JSON.parse(text); } catch {}
     return { ok: true, data };
   } catch (e) {
     return { ok: false, status: 0, text: String(e?.message || e) };
@@ -1029,18 +1030,35 @@ function wireFeedHandlers(me, db) {
   async function refreshSignedUrl(bucket, path) {
     if (!supabase) return null;
 
-    // Prefer raw fetch to avoid CORS header quirks across browsers.
+    // Prefer raw fetch to avoid CORS/header quirks across browsers.
     const fb = await invokeSignMediaRaw([{ bucket, path }], 300);
     if (fb.ok) {
       return fb.data?.items?.[0]?.signedUrl || null;
     }
 
-    // Fallback to supabase-js invoke
-    const { data, error } = await supabase.functions.invoke('sign-media', {
-      body: { items: [{ bucket, path }], expiresIn: 300 }
+    // Log failure (best-effort) and return null.
+    const dbgId = await sendClientLog({
+      level: 'error',
+      message: 'refreshSignedUrl failed',
+      stack: String(fb.text || ''),
+      url: String(location.href),
+      user_agent: String(navigator.userAgent),
+      app_version: APP_VERSION,
+      context: { bucket, path, status: fb.status }
     });
-    if (error) return null;
-    return data?.items?.[0]?.signedUrl || null;
+    if (dbgId) {
+      toast('Không lấy được signed URL. DebugID=' + dbgId);
+    }
+
+    // Fallback to supabase-js invoke (rarely works when fetch fails)
+    try {
+      const { data, error } = await supabase.functions.invoke('sign-media', {
+        body: { items: [{ bucket, path }], expiresIn: 300 }
+      });
+      if (!error) return data?.items?.[0]?.signedUrl || null;
+    } catch {}
+
+    return null;
   }
 
   // If a signed media URL fails (expired or blocked), try re-signing once.
@@ -1070,6 +1088,9 @@ function wireFeedHandlers(me, db) {
     if (!signed) {
       el.dataset.loading = '0';
       el.dataset.failed = '1';
+      // Update UI hint
+      const hint = el.querySelector?.('.muted');
+      if (hint) hint.textContent = 'Không tải được';
       return;
     }
 
