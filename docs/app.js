@@ -410,7 +410,7 @@ function renderShell(me, active) {
             <div class="muted" style="font-size:12px">${esc(me.bio)}</div>
           </div>
         </div>
-        <button id="logout" class="pill btn" type="button">Logout</button>
+        <button id="openSettings" class="pill btn" type="button" title="Settings">⚙️</button>
       </div>
       <div class="card__bd">
         <nav class="nav">
@@ -474,11 +474,27 @@ function renderShell(me, active) {
     </main>
   `);
 
-  document.getElementById('logout').addEventListener('click', () => {
-    localStorage.removeItem(LS.session);
-    toast('Đã logout');
-    render();
-  });
+  const settingsBtn = document.getElementById('openSettings');
+  if (settingsBtn) {
+    settingsBtn.addEventListener('click', async () => {
+      const isSup = !!supabase;
+      const user = isSup ? await getAuthUser() : null;
+      const name = user?.email || me.name || 'User';
+      const doLogout = confirm(`Settings\n\nAccount: ${name}\n\nOK = Logout`);
+      if (!doLogout) return;
+
+      if (isSup) {
+        await supabase.auth.signOut();
+        toast('Đã logout');
+        window.__plutosoGuest = false;
+        render();
+      } else {
+        localStorage.removeItem(LS.session);
+        toast('Đã logout');
+        render();
+      }
+    });
+  }
 
   // notifications (mock)
   const notifBtn = document.getElementById('notifBtn');
@@ -776,6 +792,18 @@ async function drawFeedFromServer(me) {
     const { data, error } = await supabase.functions.invoke('sign-media', {
       body: { items, expiresIn: 300 }
     });
+    if (error) {
+      // Best-effort: render placeholders and log error.
+      void sendClientLog({
+        level: 'error',
+        message: 'sign-media invoke failed',
+        stack: String(error.message || error),
+        url: String(location.href),
+        user_agent: String(navigator.userAgent),
+        app_version: APP_VERSION,
+        context: { hint: 'drawFeedFromServer', itemsCount: items.length }
+      });
+    }
     if (!error && data?.items) {
       for (const it of data.items) {
         signedMap.set(`${it.bucket}::${it.path}`, it.signedUrl);
@@ -791,9 +819,13 @@ async function drawFeedFromServer(me) {
     let mediaObj = null;
     if (anyMedia) {
       const url = signedMap.get(`${anyMedia.bucket}::${anyMedia.path}`);
-      if (url) {
-        mediaObj = { kind: anyMedia.media_type, url, bucket: anyMedia.bucket, path: anyMedia.path };
-      }
+      mediaObj = {
+        kind: anyMedia.media_type,
+        url: url || null,
+        bucket: anyMedia.bucket,
+        path: anyMedia.path,
+        emoji: anyMedia.media_type === 'video' ? '🎬' : '🖼️'
+      };
     }
     return { id: 'srv_' + p.id, userId: p.user_id, text: p.text, ts: new Date(p.created_at).getTime(), media: mediaObj, __display: uName };
   });
@@ -858,26 +890,51 @@ function wireFeedHandlers(me, db) {
     btn.addEventListener('click', () => toast('Demo: share sheet'));
   });
 
+  async function refreshSignedUrl(bucket, path) {
+    if (!supabase) return null;
+    const { data, error } = await supabase.functions.invoke('sign-media', {
+      body: { items: [{ bucket, path }], expiresIn: 300 }
+    });
+    if (error) return null;
+    return data?.items?.[0]?.signedUrl || null;
+  }
+
   // If a signed media URL fails (expired or blocked), try re-signing once.
   feed.querySelectorAll('img[data-media-bucket][data-media-path]').forEach(img => {
     img.addEventListener('error', async () => {
       if (img.dataset.retry === '1') return;
       img.dataset.retry = '1';
-      if (!supabase) return;
       const bucket = img.dataset.mediaBucket;
       const path = img.dataset.mediaPath;
       if (!bucket || !path) return;
 
       try {
-        const { data, error } = await supabase.functions.invoke('sign-media', {
-          body: { items: [{ bucket, path }], expiresIn: 300 }
-        });
-        if (error) return;
-        const signed = data?.items?.[0]?.signedUrl;
-        if (signed) {
-          img.src = signed;
-        }
+        const signed = await refreshSignedUrl(bucket, path);
+        if (signed) img.src = signed;
       } catch {}
+    });
+  });
+
+  // Allow manual refresh when URL missing.
+  feed.querySelectorAll('[data-media-refresh="1"]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const bucket = btn.dataset.mediaBucket;
+      const path = btn.dataset.mediaPath;
+      if (!bucket || !path) return;
+      const signed = await refreshSignedUrl(bucket, path);
+      if (!signed) {
+        toast('Không lấy được signed URL');
+        return;
+      }
+      // Replace placeholder button with img
+      const img = document.createElement('img');
+      img.className = 'post__media';
+      img.src = signed;
+      img.alt = 'post media';
+      img.loading = 'lazy';
+      img.dataset.mediaBucket = bucket;
+      img.dataset.mediaPath = path;
+      btn.replaceWith(img);
     });
   });
 
@@ -977,7 +1034,7 @@ function renderPostHtml(me, db, p) {
             ? `<video class="post__media" src="${media.url}" playsinline muted controls data-media-bucket="${esc(media.bucket || '')}" data-media-path="${esc(media.path || '')}"></video>`
             : `<img class="post__media" src="${media.url}" alt="post media" loading="lazy" data-media-bucket="${esc(media.bucket || '')}" data-media-path="${esc(media.path || '')}" />`
         )
-        : `<div class="post__media" aria-hidden="true"><span class="post__mediaEmoji">${media.emoji}</span></div>`
+        : `<button class="post__media post__mediaBtn" type="button" data-media-refresh="1" data-media-bucket="${esc(media.bucket || '')}" data-media-path="${esc(media.path || '')}"><span class="post__mediaEmoji">${media.emoji || '🖼️'}</span><span class="muted" style="position:absolute;bottom:10px;right:12px;font-size:12px">Tap để tải</span></button>`
       ) : ''}
       ${share ? `
         <div class="shareCard" aria-label="Shared link preview">

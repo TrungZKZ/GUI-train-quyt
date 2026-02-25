@@ -117,6 +117,8 @@ a{color:inherit}
   background:linear-gradient(135deg, rgba(108,92,231,.35), rgba(0,210,211,.16));display:flex;align-items:center;justify-content:center;
   width:100%;object-fit:cover}
 img.post__media, video.post__media{display:block}
+.post__mediaBtn{cursor:pointer;position:relative}
+.post__mediaBtn:hover{filter:saturate(1.05)}
 .post__mediaEmoji{font-size:56px;filter: drop-shadow(0 10px 20px rgba(0,0,0,.35));}
 .post__actions{display:flex;gap:10px;margin-top:12px;flex-wrap:wrap;align-items:center}
 .tag{font-size:12px;padding:6px 10px;border-radius:999px;border:1px solid rgba(255,255,255,.14);background:rgba(6,11,20,.25)}
