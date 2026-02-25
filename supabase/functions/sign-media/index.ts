@@ -2,7 +2,7 @@
 // Purpose: mint signed URLs (private bucket) for media referenced in DB.
 // Security model (public feed):
 // - Request can be anonymous.
-// - Function only signs paths that exist in public.post_media table.
+// - Function only signs paths that exist in public.post_media OR public.stories tables.
 // - Rate limits are basic (per request item cap). Consider adding IP rate limit at the edge.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -86,7 +86,7 @@ Deno.serve(async (req) => {
   const buckets = items.map((it) => it.bucket);
 
   // Query by path/bucket; we fetch all matches then filter.
-  const { data: rows, error: qErr } = await admin
+  const { data: postRows, error: qErr } = await admin
     .from("post_media")
     .select("bucket,path")
     .in("path", paths)
@@ -96,7 +96,17 @@ Deno.serve(async (req) => {
     return json({ error: "db_query_failed", details: qErr.message }, { status: 500, headers: corsHeaders() });
   }
 
-  const allowed = new Set((rows ?? []).map((r: any) => `${r.bucket}::${r.path}`));
+  const { data: storyRows, error: sErr } = await admin
+    .from("stories")
+    .select("bucket,path")
+    .in("path", paths)
+    .in("bucket", buckets);
+
+  if (sErr) {
+    return json({ error: "db_query_failed", details: sErr.message }, { status: 500, headers: corsHeaders() });
+  }
+
+  const allowed = new Set([...(postRows ?? []), ...(storyRows ?? [])].map((r: any) => `${r.bucket}::${r.path}`));
 
   const out: SignedItem[] = [];
   for (const it of items) {
