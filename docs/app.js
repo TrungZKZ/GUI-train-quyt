@@ -2,19 +2,54 @@
 // PlutoSo (demo) — static, no backend. Data in localStorage.
 
 // --- Crash guard (so blank screens become debuggable) ---
+async function sendClientLog(payload) {
+  try {
+    if (!supabase) return null;
+    // Best-effort insert; RLS allows insert for anon/auth.
+    const { data, error } = await supabase
+      .from('client_logs')
+      .insert(payload)
+      .select('id')
+      .single();
+    if (error) return null;
+    return data?.id ?? null;
+  } catch {
+    return null;
+  }
+}
+
 function showFatal(err) {
   try {
     const msg = (err && (err.stack || err.message)) ? String(err.stack || err.message) : String(err);
-    const app = document.getElementById('app');
-    if (app) {
-      app.innerHTML = `
-        <div style="padding:16px;max-width:980px;margin:20px auto;color:#eaf0ff">
-          <h2 style="margin:0 0 8px">PlutoSo crashed</h2>
-          <p style="margin:0 0 12px;opacity:.75">Mở DevTools Console để xem chi tiết. Copy đoạn dưới gửi dev.</p>
-          <pre style="white-space:pre-wrap;background:rgba(0,0,0,.35);padding:12px;border-radius:12px;border:1px solid rgba(255,255,255,.12)">${msg}</pre>
-        </div>
-      `;
-    }
+
+    const payload = {
+      level: 'error',
+      message: String(err?.message || err),
+      stack: msg,
+      url: String(location.href),
+      user_agent: String(navigator.userAgent),
+      app_version: APP_VERSION,
+      context: {
+        guest: !!window.__plutosoGuest,
+        hasSupabase: !!supabase,
+      }
+    };
+
+    // Fire-and-forget log upload.
+    void sendClientLog(payload).then((id) => {
+      const app = document.getElementById('app');
+      if (app) {
+        const extra = id ? `Debug ID: <strong>${id}</strong>` : 'Debug ID: (không gửi được)';
+        app.innerHTML = `
+          <div style="padding:16px;max-width:980px;margin:20px auto;color:#eaf0ff">
+            <h2 style="margin:0 0 8px">PlutoSo crashed</h2>
+            <p style="margin:0 0 6px;opacity:.75">${extra}</p>
+            <p style="margin:0 0 12px;opacity:.75">Nếu anh không mở được console, chỉ cần gửi Debug ID.</p>
+            <pre style="white-space:pre-wrap;background:rgba(0,0,0,.35);padding:12px;border-radius:12px;border:1px solid rgba(255,255,255,.12)">${msg}</pre>
+          </div>
+        `;
+      }
+    });
   } catch {}
 }
 
@@ -26,6 +61,8 @@ const LS = {
   db: 'plutoso.db.v1',
   storiesSeen: 'plutoso.storiesSeen.v1'
 };
+
+const APP_VERSION = '2026-02-24T19:05Z';
 
 // --- Supabase (public) ---
 // IMPORTANT: use only ANON/PUBLISHABLE key in frontend.
@@ -259,6 +296,7 @@ function renderLoginSupabase() {
             <input id="authPass" class="storyReply" type="password" placeholder="password" />
             <div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">
               <button id="authGuest" class="pill btn" type="button">Vào xem thử (Guest)</button>
+              <button id="authDebug" class="pill btn" type="button">Debug</button>
               <button id="authSignup" class="pill btn" type="button">Sign up</button>
               <button id="authLogin" class="pill btn btn--primary" type="button">Login</button>
             </div>
@@ -279,6 +317,23 @@ function renderLoginSupabase() {
     setRoute('feed');
     render();
   });
+
+  // Debug mode: forces a small client log record for testing.
+  const dbgBtn = document.getElementById('authDebug');
+  if (dbgBtn) {
+    dbgBtn.addEventListener('click', async () => {
+      const id = await sendClientLog({
+        level: 'info',
+        message: 'debug_ping',
+        stack: null,
+        url: String(location.href),
+        user_agent: String(navigator.userAgent),
+        app_version: APP_VERSION,
+        context: { guest: !!window.__plutosoGuest, hasSupabase: !!supabase }
+      });
+      toast(id ? ('Debug ping OK. ID=' + id) : 'Debug ping FAILED (check RLS/table)');
+    });
+  }
 
   document.getElementById('authLogin').addEventListener('click', async () => {
     const email = emailEl.value.trim();
