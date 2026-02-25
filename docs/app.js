@@ -964,18 +964,32 @@ function wireFeedHandlers(me, db) {
     });
   });
 
-  // Allow manual refresh when URL missing.
-  feed.querySelectorAll('[data-media-refresh="1"]').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const bucket = btn.dataset.mediaBucket;
-      const path = btn.dataset.mediaPath;
-      if (!bucket || !path) return;
-      const signed = await refreshSignedUrl(bucket, path);
-      if (!signed) {
-        toast('Không lấy được signed URL');
-        return;
-      }
-      // Replace placeholder button with img
+  async function hydrateMediaPlaceholder(el) {
+    const bucket = el.dataset.mediaBucket;
+    const path = el.dataset.mediaPath;
+    if (!bucket || !path) return;
+    if (el.dataset.loading === '1') return;
+    el.dataset.loading = '1';
+
+    const signed = await refreshSignedUrl(bucket, path);
+    if (!signed) {
+      el.dataset.loading = '0';
+      el.dataset.failed = '1';
+      return;
+    }
+
+    const kind = (el.dataset.mediaKind || 'image');
+    if (kind === 'video') {
+      const v = document.createElement('video');
+      v.className = 'post__media';
+      v.src = signed;
+      v.playsInline = true;
+      v.muted = true;
+      v.controls = true;
+      v.dataset.mediaBucket = bucket;
+      v.dataset.mediaPath = path;
+      el.replaceWith(v);
+    } else {
       const img = document.createElement('img');
       img.className = 'post__media';
       img.src = signed;
@@ -983,9 +997,33 @@ function wireFeedHandlers(me, db) {
       img.loading = 'lazy';
       img.dataset.mediaBucket = bucket;
       img.dataset.mediaPath = path;
-      btn.replaceWith(img);
+      el.replaceWith(img);
+    }
+  }
+
+  // Auto-load placeholders when they become visible (no tap required).
+  const placeholders = [...feed.querySelectorAll('[data-media-refresh="1"]')];
+  if (placeholders.length) {
+    const io = new IntersectionObserver((entries) => {
+      for (const ent of entries) {
+        if (!ent.isIntersecting) continue;
+        io.unobserve(ent.target);
+        void hydrateMediaPlaceholder(ent.target);
+      }
+    }, { root: null, threshold: 0.15 });
+
+    placeholders.forEach(p => io.observe(p));
+
+    // Manual click still works as fallback.
+    placeholders.forEach(btn => {
+      btn.addEventListener('click', async () => {
+        await hydrateMediaPlaceholder(btn);
+        if (btn.isConnected && btn.dataset.failed === '1') {
+          toast('Không lấy được signed URL');
+        }
+      });
     });
-  });
+  }
 
   feed.querySelectorAll('[data-like]').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -1083,7 +1121,7 @@ function renderPostHtml(me, db, p) {
             ? `<video class="post__media" src="${media.url}" playsinline muted controls data-media-bucket="${esc(media.bucket || '')}" data-media-path="${esc(media.path || '')}"></video>`
             : `<img class="post__media" src="${media.url}" alt="post media" loading="lazy" data-media-bucket="${esc(media.bucket || '')}" data-media-path="${esc(media.path || '')}" />`
         )
-        : `<button class="post__media post__mediaBtn" type="button" data-media-refresh="1" data-media-bucket="${esc(media.bucket || '')}" data-media-path="${esc(media.path || '')}"><span class="post__mediaEmoji">${media.emoji || '🖼️'}</span><span class="muted" style="position:absolute;bottom:10px;right:12px;font-size:12px">Tap để tải</span></button>`
+        : `<button class="post__media post__mediaBtn" type="button" data-media-refresh="1" data-media-kind="${esc(media.kind || 'image')}" data-media-bucket="${esc(media.bucket || '')}" data-media-path="${esc(media.path || '')}"><span class="post__mediaEmoji">${media.emoji || '🖼️'}</span><span class="muted" style="position:absolute;bottom:10px;right:12px;font-size:12px">Đang tải…</span></button>`
       ) : ''}
       ${share ? `
         <div class="shareCard" aria-label="Shared link preview">
