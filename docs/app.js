@@ -1096,18 +1096,33 @@ function wireFeedHandlers(me, db) {
     }
   }
 
-  // Auto-load placeholders when they become visible (no tap required).
+  // Auto-load placeholders (no tap required).
   const placeholders = [...feed.querySelectorAll('[data-media-refresh="1"]')];
   if (placeholders.length) {
-    const io = new IntersectionObserver((entries) => {
-      for (const ent of entries) {
-        if (!ent.isIntersecting) continue;
-        io.unobserve(ent.target);
-        void hydrateMediaPlaceholder(ent.target);
-      }
-    }, { root: null, threshold: 0.15 });
+    const inView = (el) => {
+      const r = el.getBoundingClientRect();
+      return r.bottom > 0 && r.right > 0 && r.top < (window.innerHeight || 0) && r.left < (window.innerWidth || 0);
+    };
 
-    placeholders.forEach(p => io.observe(p));
+    // Hydrate visible placeholders immediately (first paint).
+    const immediate = placeholders.filter(inView).slice(0, 6);
+    immediate.forEach((p) => { void hydrateMediaPlaceholder(p); });
+
+    // Observe the rest if supported.
+    if ('IntersectionObserver' in window) {
+      const io = new IntersectionObserver((entries) => {
+        for (const ent of entries) {
+          if (!ent.isIntersecting) continue;
+          io.unobserve(ent.target);
+          void hydrateMediaPlaceholder(ent.target);
+        }
+      }, { root: null, threshold: 0.15 });
+
+      placeholders.forEach(p => io.observe(p));
+    } else {
+      // Fallback: hydrate a few more in the background.
+      placeholders.slice(0, 10).forEach((p) => { void hydrateMediaPlaceholder(p); });
+    }
 
     // Manual click still works as fallback.
     placeholders.forEach(btn => {
