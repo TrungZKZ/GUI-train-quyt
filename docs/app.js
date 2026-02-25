@@ -583,7 +583,8 @@ function renderFeed(me) {
         <div class="composer__row">
           <span class="muted">Tip: data lưu localStorage</span>
           <div style="display:flex;gap:10px;align-items:center">
-            <button id="photoBtn" class="pill btn" type="button">📷 Ảnh (demo)</button>
+            <button id="storyBtn" class="pill btn" type="button">＋ Đăng tin</button>
+            <button id="photoBtn" class="pill btn" type="button">📷 Ảnh/Video</button>
             <button id="postBtn" class="pill btn btn--primary" type="button">Đăng</button>
           </div>
         </div>
@@ -594,7 +595,7 @@ function renderFeed(me) {
   `;
 
   // stories row
-  renderStories(me);
+  void renderStories(me);
 
   // Upload from device (Supabase) OR fallback demo emoji
   const filePicker = document.createElement('input');
@@ -603,7 +604,14 @@ function renderFeed(me) {
   filePicker.style.display = 'none';
   document.body.appendChild(filePicker);
 
+  const storyPicker = document.createElement('input');
+  storyPicker.type = 'file';
+  storyPicker.accept = 'image/*,video/*';
+  storyPicker.style.display = 'none';
+  document.body.appendChild(storyPicker);
+
   let pendingFile = null;
+
   document.getElementById('photoBtn').addEventListener('click', () => {
     if (!supabase) {
       pendingFile = pendingFile ? null : { kind: 'photo', emoji: '🖼️' };
@@ -619,6 +627,56 @@ function renderFeed(me) {
     if (!f) return;
     pendingFile = f;
     toast(`Đã chọn file: ${f.name}`);
+  });
+
+  document.getElementById('storyBtn').addEventListener('click', () => {
+    if (!supabase) {
+      toast('Demo: đăng tin cần backend');
+      return;
+    }
+    storyPicker.value = '';
+    storyPicker.click();
+  });
+
+  storyPicker.addEventListener('change', async () => {
+    const f = storyPicker.files && storyPicker.files[0];
+    if (!f) return;
+
+    try {
+      const user = await getAuthUser();
+      if (!user) throw new Error('Not logged in');
+
+      const ext = (f.name.split('.').pop() || 'bin').toLowerCase();
+      const path = `${user.id}/${Date.now()}_${Math.random().toString(16).slice(2)}.${ext}`;
+      const bucket = 'Social';
+
+      const { error: upErr } = await supabase.storage.from(bucket).upload(path, f, {
+        cacheControl: '3600',
+        upsert: false,
+        contentType: f.type || undefined,
+      });
+      if (upErr) throw upErr;
+
+      const mediaType = f.type.startsWith('video/') ? 'video' : 'image';
+
+      const { error: sErr } = await supabase
+        .from('stories')
+        .insert({
+          user_id: user.id,
+          display_name: (await getAuthUser()).email ? userLabelFromEmail((await getAuthUser()).email) : null,
+          bucket,
+          path,
+          media_type: mediaType,
+          file_name: f.name,
+        });
+      if (sErr) throw sErr;
+
+      toast('Đã đăng tin');
+      // Refresh stories bar
+      renderStories(me);
+    } catch (e) {
+      toast('Đăng tin lỗi: ' + (e?.message || String(e)));
+    }
   });
 
   document.getElementById('postBtn').addEventListener('click', async () => {
@@ -708,11 +766,48 @@ function renderFeed(me) {
   }, 180);
 }
 
-function renderStories(me) {
+async function renderStories(me) {
   const el = document.getElementById('stories');
   if (!el) return;
 
   const seen = loadSeenStories();
+
+  // Prefer server stories if available
+  if (supabase) {
+    const { data, error } = await supabase
+      .from('stories')
+      .select('id,user_id,display_name,bucket,path,media_type,created_at,expires_at')
+      .order('created_at', { ascending: false })
+      .limit(50);
+
+    if (!error && data && data.length) {
+      const byUser = new Map();
+      for (const s of data) {
+        if (!byUser.has(s.user_id)) byUser.set(s.user_id, []);
+        byUser.get(s.user_id).push(s);
+      }
+
+      const users = [...byUser.keys()].slice(0, 12);
+      el.innerHTML = users.map(uid => {
+        const name = byUser.get(uid)[0].display_name || ('User ' + String(uid).slice(0, 6));
+        const isSeen = seen.has(uid);
+        return `
+          <button class="story ${isSeen ? 'story--seen' : ''}" type="button" data-story-user="${uid}">
+            <div class="story__cover"></div>
+            <div class="story__avatar"><span class="avatar">🪐</span></div>
+            <div class="story__name">${esc(name)}</div>
+          </button>
+        `;
+      }).join('');
+
+      el.querySelectorAll('[data-story-user]').forEach(btn => {
+        btn.addEventListener('click', () => openStoryViewer(me, btn.dataset.storyUser));
+      });
+      return;
+    }
+  }
+
+  // Fallback: local generated stories
   const people = [me, ...USERS.filter(u => u.id !== me.id)];
 
   el.innerHTML = people.map(u => {
@@ -1210,11 +1305,60 @@ function storiesForUser(userId) {
   });
 }
 
-function openStoryViewer(me, userId) {
+async function openStoryViewer(me, userId) {
   const dialog = document.getElementById('storyDialog');
   if (!dialog) return;
 
   STORY.me = me;
+
+  // If Supabase is available, try to load real stories for this user.
+  if (supabase) {
+    const { data, error } = await supabase
+      .from('stories')
+      .select('id,user_id,display_name,bucket,path,media_type,created_at,expires_at')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(12);
+
+    if (!error && data && data.length) {
+      const ownerName = data[0].display_name || ('User ' + String(userId).slice(0, 6));
+      STORY.owner = { id: userId, name: ownerName, avatar: '🪐' };
+
+      // Sign URLs
+      const items = data.map(s => ({ bucket: s.bucket, path: s.path }));
+      const fb = await invokeSignMediaRaw(items, 300);
+      const map = new Map();
+      if (fb.ok && fb.data?.items) {
+        for (const it of fb.data.items) map.set(`${it.bucket}::${it.path}`, it.signedUrl);
+      }
+
+      STORY.items = data.map((s) => {
+        const url = map.get(`${s.bucket}::${s.path}`);
+        return {
+          id: 'srv_story_' + s.id,
+          userId: s.user_id,
+          ts: new Date(s.created_at).getTime(),
+          kind: s.media_type,
+          url,
+          emoji: s.media_type === 'video' ? '🎬' : '🖼️'
+        };
+      });
+
+      STORY.idx = 0;
+      renderStoryUi();
+      dialog.showModal();
+
+      const seen = loadSeenStories();
+      seen.add(userId);
+      saveSeenStories(seen);
+      void renderStories(me);
+
+      startStoryTimer();
+      return;
+    }
+  }
+
+  // Fallback: generated stories
   STORY.owner = userById(userId) || me;
   STORY.items = storiesForUser(userId);
   STORY.idx = 0;
@@ -1222,12 +1366,10 @@ function openStoryViewer(me, userId) {
   renderStoryUi();
   dialog.showModal();
 
-  // mark seen
   const seen = loadSeenStories();
   seen.add(userId);
   saveSeenStories(seen);
-  // reflect seen state in stories bar
-  renderStories(me);
+  void renderStories(me);
 
   startStoryTimer();
 }
@@ -1274,7 +1416,35 @@ function renderStoryUi() {
   document.getElementById('storyAvatar').textContent = owner.avatar;
   document.getElementById('storyName').textContent = owner.name;
   document.getElementById('storyTime').textContent = fmtTime(item.ts);
-  document.getElementById('storyContent').textContent = item.emoji;
+  if (item.url) {
+    // Render media
+    const stage = document.getElementById('storyContent');
+    stage.innerHTML = '';
+    if (item.kind === 'video') {
+      const v = document.createElement('video');
+      v.src = item.url;
+      v.playsInline = true;
+      v.muted = true;
+      v.autoplay = true;
+      v.loop = true;
+      v.controls = false;
+      v.style.maxWidth = '100%';
+      v.style.maxHeight = '100%';
+      v.style.borderRadius = '18px';
+      stage.appendChild(v);
+    } else {
+      const img = document.createElement('img');
+      img.src = item.url;
+      img.alt = 'story';
+      img.style.maxWidth = '100%';
+      img.style.maxHeight = '100%';
+      img.style.objectFit = 'contain';
+      img.style.borderRadius = '18px';
+      stage.appendChild(img);
+    }
+  } else {
+    document.getElementById('storyContent').textContent = item.emoji;
+  }
 
   // progress bars
   const prog = document.getElementById('storyProgress');
