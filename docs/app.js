@@ -75,6 +75,29 @@ const supabase = (window.supabase && window.supabase.createClient)
   ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
   : null;
 
+async function invokeSignMediaRaw(items, expiresIn = 300) {
+  // Avoid supabase-js invoke CORS quirks by calling the function endpoint directly.
+  try {
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/sign-media`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      },
+      body: JSON.stringify({ items, expiresIn }),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      return { ok: false, status: res.status, text };
+    }
+    const data = await res.json();
+    return { ok: true, data };
+  } catch (e) {
+    return { ok: false, status: 0, text: String(e?.message || e) };
+  }
+}
+
 const USERS = [
   { id: 'u1', name: 'Trung', avatar: '🪐', bio: 'Sếp tổng PlutoSo (demo).' },
   { id: 'u2', name: 'Quy', avatar: '🚀', bio: 'Thích làm sản phẩm nhanh & gọn.' },
@@ -789,22 +812,40 @@ async function drawFeedFromServer(me) {
   const items = media.map(m => ({ bucket: m.bucket, path: m.path }));
   const signedMap = new Map();
   if (items.length) {
-    const { data, error } = await supabase.functions.invoke('sign-media', {
-      body: { items, expiresIn: 300 }
-    });
-    if (error) {
-      // Best-effort: render placeholders and log error.
-      void sendClientLog({
-        level: 'error',
-        message: 'sign-media invoke failed',
-        stack: String(error.message || error),
-        url: String(location.href),
-        user_agent: String(navigator.userAgent),
-        app_version: APP_VERSION,
-        context: { hint: 'drawFeedFromServer', itemsCount: items.length }
+    let data = null;
+    let error = null;
+
+    // First try supabase-js invoke
+    try {
+      const r = await supabase.functions.invoke('sign-media', {
+        body: { items, expiresIn: 300 }
       });
+      data = r.data;
+      error = r.error;
+    } catch (e) {
+      error = e;
     }
-    if (!error && data?.items) {
+
+    // Fallback to raw fetch if invoke fails (often CORS header issues)
+    if (error) {
+      const fb = await invokeSignMediaRaw(items, 300);
+      if (fb.ok) {
+        data = fb.data;
+        error = null;
+      } else {
+        void sendClientLog({
+          level: 'error',
+          message: 'sign-media invoke+fetch failed',
+          stack: String(fb.text || error?.message || error),
+          url: String(location.href),
+          user_agent: String(navigator.userAgent),
+          app_version: APP_VERSION,
+          context: { hint: 'drawFeedFromServer', itemsCount: items.length, status: fb.status }
+        });
+      }
+    }
+
+    if (data?.items) {
       for (const it of data.items) {
         signedMap.set(`${it.bucket}::${it.path}`, it.signedUrl);
       }
@@ -892,6 +933,14 @@ function wireFeedHandlers(me, db) {
 
   async function refreshSignedUrl(bucket, path) {
     if (!supabase) return null;
+
+    // Prefer raw fetch to avoid CORS header quirks across browsers.
+    const fb = await invokeSignMediaRaw([{ bucket, path }], 300);
+    if (fb.ok) {
+      return fb.data?.items?.[0]?.signedUrl || null;
+    }
+
+    // Fallback to supabase-js invoke
     const { data, error } = await supabase.functions.invoke('sign-media', {
       body: { items: [{ bucket, path }], expiresIn: 300 }
     });
