@@ -96,17 +96,26 @@ Deno.serve(async (req) => {
     return json({ error: "db_query_failed", details: qErr.message }, { status: 500, headers: corsHeaders() });
   }
 
-  const { data: storyRows, error: sErr } = await admin
+  let storyRows: any[] = [];
+  const storyRes = await admin
     .from("stories")
     .select("bucket,path")
     .in("path", paths)
     .in("bucket", buckets);
 
-  if (sErr) {
-    return json({ error: "db_query_failed", details: sErr.message }, { status: 500, headers: corsHeaders() });
+  if (storyRes.error) {
+    // Be tolerant: stories table might not be created yet.
+    // In that case we can still sign post_media.
+    const msg = storyRes.error.message || '';
+    const missing = msg.includes("schema cache") || msg.includes("does not exist") || msg.includes("relation");
+    if (!missing) {
+      return json({ error: "db_query_failed", details: storyRes.error.message }, { status: 500, headers: corsHeaders() });
+    }
+  } else {
+    storyRows = storyRes.data ?? [];
   }
 
-  const allowed = new Set([...(postRows ?? []), ...(storyRows ?? [])].map((r: any) => `${r.bucket}::${r.path}`));
+  const allowed = new Set([...(postRows ?? []), ...storyRows].map((r: any) => `${r.bucket}::${r.path}`));
 
   const out: SignedItem[] = [];
   for (const it of items) {
