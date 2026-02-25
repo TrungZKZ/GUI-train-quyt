@@ -1013,9 +1013,69 @@ function wireFeedHandlers(me, db) {
   feed.querySelectorAll('.menu__item').forEach(item => {
     item.addEventListener('click', () => {
       const act = item.dataset.act;
-      if (act === 'copy') toast('Demo: copy link');
-      else if (act === 'save') toast('Demo: đã lưu');
-      else toast('Demo: đã gửi report');
+      const postId = item.dataset.post;
+
+      if (act === 'copy') {
+        toast('Demo: copy link');
+      } else if (act === 'save') {
+        toast('Demo: đã lưu');
+      } else if (act === 'delete') {
+        void (async () => {
+          if (!postId) return;
+          const ok = confirm('Xóa bài đăng này?');
+          if (!ok) return;
+
+          // Server delete if this is a server post
+          if (supabase && postId.startsWith('srv_')) {
+            const id = Number(postId.slice(4));
+            if (!Number.isFinite(id)) return;
+
+            const user = await getAuthUser();
+            if (!user) {
+              toast('Cần đăng nhập');
+              return;
+            }
+
+            // Only allow owner delete
+            const { data: pRow, error: pErr } = await supabase
+              .from('posts')
+              .select('id,user_id')
+              .eq('id', id)
+              .single();
+            if (pErr) {
+              toast('Không xóa được: ' + pErr.message);
+              return;
+            }
+            if (pRow.user_id !== user.id) {
+              toast('Không phải bài của bạn');
+              return;
+            }
+
+            const { error: dErr } = await supabase
+              .from('posts')
+              .delete()
+              .eq('id', id);
+            if (dErr) {
+              toast('Xóa lỗi: ' + dErr.message);
+              return;
+            }
+
+            toast('Đã xóa');
+            // refresh feed (reuse current me)
+            await drawFeedFromServer(me);
+          } else {
+            // Local delete
+            const dbLocal = loadDb();
+            dbLocal.posts = (dbLocal.posts || []).filter(p => p.id !== postId);
+            saveDb(dbLocal);
+            toast('Đã xóa (local)');
+            drawFeed(me);
+          }
+        })();
+      } else {
+        toast('Demo');
+      }
+
       // close all
       feed.querySelectorAll('[data-menu-pop]').forEach(x => x.setAttribute('hidden', ''));
     });
@@ -1237,8 +1297,9 @@ function renderPostHtml(me, db, p) {
           <button class="iconBtn" type="button" aria-label="Menu" data-menu="${p.id}">⋯</button>
           <div class="menu" data-menu-pop="${p.id}" hidden>
             <button class="menu__item" type="button" data-act="save" data-post="${p.id}">Lưu bài viết (demo)</button>
-            <button class="menu__item" type="button" data-act="report" data-post="${p.id}">Báo cáo (demo)</button>
             <button class="menu__item" type="button" data-act="copy" data-post="${p.id}">Copy link (demo)</button>
+            <div class="menu__sep"></div>
+            <button class="menu__item menu__item--danger" type="button" data-act="delete" data-post="${p.id}">Xóa bài đăng</button>
           </div>
         </div>
 

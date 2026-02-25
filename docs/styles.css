@@ -164,6 +164,9 @@ img.post__media, video.post__media{display:block}
   background:rgba(7,11,18,.96);box-shadow:var(--shadow);overflow:hidden;z-index:30}
 .menu__item{width:100%;text-align:left;padding:10px 12px;border:none;background:transparent;color:var(--text);cursor:pointer}
 .menu__item:hover{background:rgba(233,241,255,.05)}
+.menu__sep{height:1px;background:rgba(233,241,255,.08);margin:6px 0}
+.menu__item--danger{color:rgba(255,120,120,.92)}
+.menu__item--danger:hover{background:rgba(255,120,120,.08)}
 
 /* Share preview */
 .shareCard{margin-top:10px;display:grid;grid-template-columns:120px 1fr;gap:10px;border-radius:18px;border:1px solid rgba(255,255,255,.12);
